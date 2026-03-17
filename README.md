@@ -6,10 +6,16 @@ DSDT dump and patch set for **Lecoo Pro 14 (N155A)**.
 This patch addresses the following issues:
 - Fixes the bug where the laptop reboots instead of powering off in Linux ([Shutdown turns into Reboot](https://4pda.to/forum/index.php?showtopic=1108499&st=3420#entry141777966))..
 - Unlocks the **S3 state** (Suspend to RAM), [although it likely does not work on the hardware level](https://4pda.to/forum/index.php?showtopic=1108499&st=3340#entry141732975).
+- Fixes **buffer overflow issues** for WMI methods.
+- Resolves "ACPI ...device not found" errors during system boot.
+- Fixes the "instant wake" issue for the S4 state (hibernation).
+
 
 ### ⚠️ Important
 
 The `acpi_override` file must be loaded **BEFORE** the main initramfs image.
+- **Secure Boot:** This patch will likely **not work** out-of-the-box if Secure Boot is enabled. Loading custom ACPI tables under Secure Boot requires complex manual signing and enrolling of your own keys. It is highly recommended to disable Secure Boot, otherwise, you are on your own to configure it.
+
 
 ## Preparation
 
