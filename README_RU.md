@@ -37,7 +37,7 @@ sudo nano /boot/loader/entries/arch.conf
 ```text
 title   Arch Linux
 linux   /vmlinuz-linux
-initrd  /acpi_override       # <-- СНАЧАЛА override!!
+initrd  /acpi_override.cpio       # <-- СНАЧАЛА override!!
 initrd  /initramfs-linux.img
 options root=UUID=... rw
 
@@ -59,7 +59,7 @@ sudo nano /etc/default/grub
 * **Если её нет:** Добавьте строку в конец файла:
 
 ```bash
-GRUB_EARLY_INITRD_LINUX_CUSTOM="acpi_override"
+GRUB_EARLY_INITRD_LINUX_CUSTOM="acpi_override.cpio"
 ```
 
 *(Примечание: Путь указывается относительно корня /boot. Если не сработает, попробуйте `"/boot/acpi_override"`).*
