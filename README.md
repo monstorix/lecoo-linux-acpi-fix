@@ -1,6 +1,6 @@
 # ACPI DSDT patches for Lecoo Pro 14 (Linux)
 
-🇷🇺 [Russian Readme here](README_RU.md) 🇨🇳 [中文自述](README_ZH.md)
+🇷🇺 [Russian Readme here](README_RU.md) | 🇨🇳 [中文自述](README_ZH.md)
 
 DSDT dump and patch set for **Lecoo Pro 14 (N155A)**.
 This patch addresses the following issues:
@@ -17,7 +17,7 @@ The `acpi_override` file must be loaded **BEFORE** the main initramfs image.
 
 #### ℹ️ Known Limitations and Issues
 
-- **Secure Boot:** This patch will likely not work out-of-the-box if Secure Boot is enabled. Depending on the bootloader used, loading custom ACPI tables under Secure Boot may require complex manual signing and enrollment of your own keys or files modification in critical partitions. It is highly recommended that you disable Secure Boot to use this patch to avoid system down by misconfiguration. You will need to resolve any issues or errors that arise during the configuration process yourself.
+- **Secure Boot:** This patch will not work out-of-the-box if Secure Boot **is enabled**. Depending on the bootloader used, loading custom ACPI tables under Secure Boot may require complex manual signing and enrollment of your own keys or files modification in critical partitions. It is highly recommended that you disable Secure Boot to use this patch to avoid system down by misconfiguration. You will need to resolve any issues or errors that arise during the configuration process yourself.
 
 - **TPM 2.0:** This patch may prevent fTPM from being detected by the Linux kernel's built-in drivers (Device `/dev/tpm0` or `/dev/tpmrm0` will report a timeout in dmesg). This will result in a 90-second delay to boot time. For now, the only solution is to disable the TPM in the BIOS. If you are already using TPM-related features such as the automatic unlocking of LUKS partitions, it is not recommended that you use this patch. However, PRs are welcomed if you have found another solution. (See [the issue #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3) for the reference)
 
