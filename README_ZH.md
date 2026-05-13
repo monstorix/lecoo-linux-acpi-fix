@@ -86,7 +86,7 @@ sudo update-grub
 
 ## 方法 3: Limine Bootloader (CachyOS, Arch 等系统)
 
-确保 `limine-dracut-support` 或 `limine-mkinitcpio-hook` 已安装到系统中。 
+确保 `limine-dracut-support` 或 `limine-mkinitcpio-hook` 已安装到系统中。
 1. 找到并打开 Limine 配置文件，路径通常位于 `/boot/limine.conf`。
 2. 找到系统的主启动项（通常位第一项）并在 initramfs 前添加新的 `module_path` 行。以下是 CachyOS 的例子：
 
@@ -102,23 +102,30 @@ sudo update-grub
   path: boot():/(random path)/linux-cachyos/vmlinuz-linux-cachyos#{HASH}
   cmdline: quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX
 ```
-3. 保存文件并运行 `sudo limine-enroll-config` 将配置写入引导。
-4. 重启测试。**内核升级后，你可能需要再次添加模块行。**
+3. 保存文件并重启，测试补丁是否正常运作。
+- 如果一切良好，则可以修改 `/etc/default/limine` 中的 `KERNEL_CMDLINE` 参数，确保补丁在内核更新后仍然保持应用。
+```text
+# 将补丁路径添加到 KERNEL_CMDLINE 的最前面，系统在更新引导时将自动转换其为模块路径（module_path）。
+# “default”意味着所有已安装内核都会默认应用此补丁参数。
+# 如果你只想为单独内核应用补丁，则可以将其改为对应的启动条目名称，如”linux-cachyos“。
+                          ↓  
+KERNEL_CMDLINE[default]+="initrd=/acpi_override.cpio quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX"
+```
+5. 运行 `sudo limine-update` 为内核应用更改。
 
 <details>
     <summary>利用 Limine 将补丁与安全启动配合使用（高级用户）</summary>
   
-要将补丁与安全启动配合使用，你需要将自定义安全密钥写入主板固件。
+要将补丁与安全启动配合使用，你需要将自定义安全密钥写入主板固件。以下操作通常只需要执行一次。
 
-> 本节信息基于 [CachyOS 安全启动配置指南](https://wiki.cachyos.org/configuration/secure_boot_setup/#enabling-setup-mode-in-uefi)。建议在进行实际配置前仔细阅读该指南。
-    
-### 固件准备（如果安全启动尚未开启）：
-首先你需要将 BIOS 安全启动模块置于 “Setup”（配置）模式。以下操作通常只需要执行一次：
+> 本节信息基于 [CachyOS 安全启动配置指南](https://wiki.cachyos.org/configuration/secure_boot_setup/#enabling-setup-mode-in-uefi)与 [ArchWiki - Limine](https://wiki.archlinux.org/title/Limine)。建议在进行实际配置前仔细阅读这些指南。
+
 <details>
 <summary>查看步骤</summary>
 
+配置之前请确保安全启动处于**关闭**状态。
 1. 进入 BIOS 配置界面，找到 `Security > Secure Boot > Expert Key Management > Factory Key Provision`。将该项设为 `Disable`（禁用），然后按 F4 保存并重启。
-2. 再次进入 BIOS，找到 `Security > Secure Boot > Reset to Setup Mode`，进入并选择 "Yes"。
+2. 再次进入 BIOS，找到 `Security > Secure Boot > Reset to Setup Mode`，进入并选择 "Yes"。此时安全启动模块应处于 “Setup”（配置）模式。
 3. 重启进入系统，检查 sbctl 工具是否已安装。如果未安装，请执行以下命令安装：
 ```bash
 sudo pacman -S sbctl
@@ -127,36 +134,31 @@ sudo pacman -S sbctl
 5. 执行 `sudo sbctl create-keys` 创建自定义密钥。
 6. 执行 `sudo sbctl enroll-keys --microsoft --firmware-builtin` 将密钥录入 EFI。
 7. 再次执行 `sudo sbctl status` 检查密钥是否成功安装。
-8. 打开 `/etc/default/limine` 文件，修改以下配置为 “yes” 以启用 Limine 自定义校验值录入功能：
+8. 打开 `/etc/default/limine` 文件，修改以下配置为 “yes” 以启用 Limine 自动校验值录入功能：
 ```
 ENABLE_ENROLL_LIMINE_CONFIG=yes
 ```
-9. **(对于 CachyOS)** 由于默认引导配置未签名，你需要为 Limine 壁纸单独生成 BLAKE2B 校验值，并将其添加到 Limine 配置文件中，校验值前面需要添加 `#` ：
+9. 按照上方的介绍，将补丁路径添加到默认内核指令。
+10. 你需要在 Limine 配置文件中为 Limine 壁纸及补丁模块补充 BLAKE2B 校验值，校验值前面需要添加 `#` ：
 ```
 sudo b2sum /boot/limine-splash.png | cut -d' ' -f1
 ```
 ```
+sudo b2sum /boot/acpi_override.cpio | cut -d' ' -f1
+```
+```
 # /boot/limine.conf
 wallpaper: boot():/limine-splash.png#{你的校验值}
+
+module_path: boot():/acpi_override.cpio#{你的校验值}
 ```
 **警告: 校验值错误会导致引导报错！！** Limine 只需要对自身可执行文件进行签名，即可使用安全启动引导，其余模块文件的检查由加载器本身执行。因此，你只需要保证 Limine 配置文件中所有模块、壁纸等文件的 BLAKE2B 校验值准确，即可顺利启动。
 
-10. 保存文件并运行 `sudo limine-enroll-config` 和 `sudo limine-update` 以将新配置写入引导。
-11. 重启到 BIOS 配置界面，确保安全启动选项已打开后，再次重启测试。 
-</details>
+11. 保存文件并运行 `sudo limine-enroll-config` 和 `sudo limine-update` 以将新配置写入引导。
+12. 打开 `/boot/limine.conf` 确认所有模块都已具有 BLAKE2B 校验值。
+13. 重启到 BIOS 配置界面，打开安全启动选项后，再次重启测试。补丁更新后，你需要按照步骤 10 和 11 自行将新的校验值补充到配置文件中。
 
-### 补丁配置：
-1. 为补丁生成 BLAKE2B 校验值
-```bash
-sudo b2sum /boot/acpi_override.cpio | cut -d' ' -f1
-```
-2. 使用前述步骤为补丁添加 `module_path` 行。
-3. 在路径之后添加校验值：
-```text
-module_path: boot():/acpi_override.cpio#{你的校验值}
-```
-5. 保存文件并运行 `sudo limine-enroll-config` (此处无需运行 `limine-update`！) 以将新配置写入引导。
-6. 重启测试。**内核升级后，你可能需要再次添加模块行。**
+</details>
 </details>
 
 

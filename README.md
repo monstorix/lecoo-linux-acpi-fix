@@ -104,23 +104,30 @@ Make sure `limine-dracut-support` or `limine-mkinitcpio-hook` installed in your 
   path: boot():/(random path)/linux-cachyos/vmlinuz-linux-cachyos#{HASH}
   cmdline: quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX
 ```
-3. Save the file and run `sudo limine-enroll-config` to write the configuration to the bootloader.
-4. Reboot and check everything is working correctly. You may need to re-add the module line after kernel updates.
+3. Save the file and Reboot and check everything is working correctly. 
+4. If everything is working correctly, you can modify the KERNEL_CMDLINE in `/etc/default/limine` to ensure that the patch remains applied after the kernel is updated.
+```text
+# Add the patch path as an initrd to the line beginning; the hooks will automatically convert it to a module_path when updating the bootloader.
+# “[default]” means that the parameters will be applied to all installed kernels. 
+# If you only wish to apply it to a specific kernel, you can change it to the name of the corresponding boot entry, such as “linux-cachyos”.
+                          ↓  
+KERNEL_CMDLINE[default]+="initrd=/acpi_override.cpio quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX"
+```
+5. Run `sudo limine-update` to apply the changes.
 
 <details>
     <summary>Configure the patch for using with Secure Boot (For advanced users)</summary>
   
-In order to use this patch with Secure Boot, a custom secure key must be written to the firmware. 
+In order to use this patch with Secure Boot, a custom secure key must be written to the firmware. The following steps usually only need to be done once:
 
-> This section is based on the information from [CachyOS Secure Boot Setup Guide](https://wiki.cachyos.org/configuration/secure_boot_setup/#enabling-setup-mode-in-uefi). We recommend reading it before carrying out the actual setup.
-    
-#### Firmware preparation (If Secure Boot not enabled):
-You need to put the BIOS Secure Boot settings into "Setup" mode first. The following steps usually only need to be done once:
+> This section is based on the information from [CachyOS Secure Boot Setup Guide](https://wiki.cachyos.org/configuration/secure_boot_setup/#enabling-setup-mode-in-uefi) and [ArchWiki - Limine](https://wiki.archlinux.org/title/Limine). We recommend reading them before carrying out the actual setup.
+
 <details>
 <summary>See the steps</summary>
 
+Make sure the Secure Boot has been **disabled** before doing the configuration.
 1. Boot to BIOS Setup and locate `Security > Secure Boot > Expert Key Management > Factory Key Provision`. Set this to `Disable` and then press F4 to save and reboot.
-2. Go back to BIOS Setup and locate `Security > Secure Boot > Reset to Setup Mode`, then select "Yes".
+2. Go back to BIOS Setup and locate `Security > Secure Boot > Reset to Setup Mode`, then select "Yes". The BIOS Secure Boot Module should be in Setup mode now.
 3. Boot into the system and check whether sbctl is installed. If not, install it using the following commands:
 ```
 sudo pacman -S sbctl
@@ -129,36 +136,31 @@ sudo pacman -S sbctl
 5. Create the keys by running `sudo sbctl create-keys`.
 6. Enroll the new keys in EFI by running `sudo sbctl enroll-keys --microsoft --firmware-builtin`.
 7. Run `sudo sbctl status` again to check that the keys have been installed successfully.
-8. Change the following settings to yes in the `/etc/default/limine` file to enable custom checksum enrollment:
+8. Change the following settings to yes in the `/etc/default/limine` file to enable automatic checksum enrollment:
 ```
 ENABLE_ENROLL_LIMINE_CONFIG=yes
 ```
-9. **(For CachyOS)** Generate BLAKE2B checksums for the Limine wallpaper since it is not signed by default, then add it to Limine configuration file, remembering to put a `#` before checksums: 
+9. Use the above steps to add `KERNEL_CMDLINE` for the patch.
+10. Generate BLAKE2B checksums for extra wallpapers and modules since they are not signed by default, then add them to Limine configuration file, remembering to put a `#` before checksums: 
 ```
 sudo b2sum /boot/limine-splash.png | cut -d' ' -f1
 ```
 ```
+sudo b2sum /boot/acpi_override.cpio | cut -d' ' -f1
+```
+```
 # /boot/limine.conf
 wallpaper: boot():/limine-splash.png#{YOUR HASH}
+
+module_path: boot():/acpi_override.cpio#{YOUR HASH}
 ```
 **WARNING: Wrong checksum will make the bootloader panic!!** Limine only needs to sign its EFI binaries itself to boot with Secure Boot, other files are being checked inside the bootloader. Therefore, all you need to do is make sure the BLAKE2B checksums for all the module files in the Limine configuration are correct.
 
-10. Save the file and run `sudo limine-enroll-config` and `sudo limine-update` to write the configuration to the bootloader.
-11. Reboot to BIOS, enable Secure Boot then reboot again to check everything is working correctly. 
+11. Save the file and run `sudo limine-enroll-config` and `sudo limine-update` to write the configuration to the bootloader.
+12. Open `/boot/limine.conf` to check if every module has a BLAKE2B checksum.
+13. Reboot to BIOS, enable Secure Boot then reboot again to check everything is working correctly. If the patch needs updating, you will need to add the new checksum to the configuration file yourself, following steps 10 and 11.
 </details>
 
-#### Patch configurations: 
-1. Generate BLAKE2B checksums for the patch
-```
-sudo b2sum /boot/acpi_override.cpio | cut -d' ' -f1
-```
-2. Use the above steps to add the `module_path` for the patch.
-3. Add the generated checksums after the module paths.
-```
-module_path: boot():/acpi_override.cpio#{YOUR HASH}
-```
-5. Save the file and run `sudo limine-enroll-config` (`limine-update` is not needed here! ) to write the configuration to the bootloader.
-6. Reboot to check everything is working correctly. **You may need to re-add the module line with the checksum after updating the kernel.**
 </details>
 
 
