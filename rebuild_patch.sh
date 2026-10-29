@@ -22,17 +22,26 @@
 #   * this patch NOT loaded in the current boot (reboot without
 #     acpi_override.cpio first, otherwise the dump will be the patched table)
 #
-# NOTE (2026-10, revised 2026-10-27): on BIOS 2.5 the firmware already handles
-# most issues this patch targets. The earlier claim that ANY override raises
-# the shutdown->reboot rate (~18 % -> ~44 %) was never statistically
-# significant (3/17 vs 11/25, single-table runs n = 1) and was not
-# reproduced: external validation (issue #6) showed a locally rebuilt patch
-# applying cleanly on a second 2.5 machine with fTPM and s2idle working,
-# while the intermittent shutdown->reboot (~20-50 %) reproduces with the
-# patch (and probably without it — the stock baseline there is unmeasured).
-# Loading the output on 2.5 is therefore OPTIONAL: reasonable if s2idle
-# misbehaves on your unit, pointless otherwise. See
-# patches/bios-0x01072009/CHANGES.md ("Update 2026-10-27").
+# NOTE (2026-10-29, supersedes the 2026-10-27 wording): on BIOS 2.5 the two
+# remaining symptoms have different causes and need different fixes.
+#
+#   * s2idle instant wake — _AEI pin 0x0018 (the RTL8111 wake line) is declared
+#     ExclusiveAndWake in the AML, so it can only be disarmed by editing the
+#     table; /proc/acpi/wakeup, device/power/wakeup and IRQ masking all leave
+#     it armed. `--minimal` ships exactly that one edit.
+#     Measured on the reference unit: stock 2.5 wakes after 0.1-0.7 s, every
+#     time; with the table loaded the same unit held 20 s / 1375 s / 8.9 s
+#     suspends, all ended by a keypress.
+#
+#   * shutdown -> reboot — NOT caused by the wake event (a shutdown right after
+#     an instant wake was also clean) and NOT fixed by the table. It comes from
+#     the r8169 shutdown path: driver unbound -> 6/6 clean shutdowns, driver
+#     bound -> reboots still occur. Hence lecoo-nic-unbind.service (ExecStop
+#     unbind right before poweroff).
+#
+# The earlier "any override raises the reboot rate" claim was never
+# statistically significant (3/17 vs 11/25, single-table runs n = 1) and is
+# dropped. See patches/bios-0x01072009/CHANGES.md.
 #
 # Usage:
 #   sudo ./rebuild_patch.sh                    # dump + rebuild + pack cpio
@@ -833,16 +842,58 @@ log "Build: $VERSION — profile: $PROFILE"
 log "Compiled tables kept in $PATCHED_DIR (gitignored) for manual use"
 log "Done. Output: $OUT_FILE"
 echo
-echo "===================================================================="
-echo "  BEFORE THE NEXT REBOOT — BIOS SETUP (mandatory)"
-echo "    Set ACPI = Auto   (BIOS > Advanced > ACPI Settings / ACPI Support)"
-echo "    Auto or Enabled is required. Disabled makes every override useless"
-echo "    and changes the firmware paths the tables were validated against."
-echo "    (The reference test machine already runs with ACPI = Auto.)"
-echo "===================================================================="
+echo "========================================================================"
+echo "  BIOS 2.5 — RECOMMENDED DEPLOYMENT: three layers, two separate symptoms"
+echo "========================================================================"
+echo "  S5 (shutdown -> reboot) and the s2idle instant wake have DIFFERENT"
+echo "  causes. No single layer fixes both. Deploy them in this order."
+echo
+echo "  [L1] kernel cmdline  — S5"
+echo "       add to your bootloader:   acpi.ec_no_wakeup=1"
+echo "       Limine: KERNEL_CMDLINE[default]+=... in /etc/default/limine,"
+echo "               then: sudo limine-update"
+echo "       (the reference unit also runs acpi_osi=\"!Windows 2020\"; that one"
+echo "        is inert on 2.5, kept only for reproducibility)"
+echo
+if [[ "${MINIMAL:-0}" == "1" ]]; then
+echo "  [L2] THIS table     — s2idle instant wake"
+echo "       it overrides exactly one SSDT, one edit: _AEI pin 0x0018 non-wake"
+echo "       one-time setup:"
+echo "         sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio"
+echo "         add 'acpi_override' to HOOKS in /etc/mkinitcpio.conf"
+echo "         sudo limine-update        # UKI;  or: sudo mkinitcpio -P"
+echo "       the hook puts the .aml into the early UNCOMPRESSED cpio that"
+echo "       mkinitcpio embeds in the UKI — there is no separate 'initrd=' line"
+echo "       and nothing to re-edit after a kernel upgrade."
+else
+echo "  [L2] THIS build is the full legacy profile (DSDT + 3 SSDT)."
+echo "       For BIOS 2.5 the validated minimal set is:"
+echo "         sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio"
+echo "       The DSDT-based profile predates 2.5 and is kept for older BIOS."
+echo "       Inject via the mkinitcpio 'acpi_override' hook (works in a UKI):"
+echo "         add 'acpi_override' to HOOKS, then sudo limine-update"
+fi
+echo
+echo "  [L3] guard units    — everything the table cannot reach"
+echo "       sudo install -m755 patches/bios-0x01072009/systemd/*.sh /usr/local/sbin/"
+echo "       sudo install -m755 patches/bios-0x01072009/systemd/50-lecoo-acpi-log \\"
+echo "                         /usr/lib/systemd/system-sleep/"
+echo "       sudo install -m644 patches/bios-0x01072009/systemd/*.service \\"
+echo "                         /etc/systemd/system/"
+echo "       sudo install -m755 tools/lecoo-acpi-log.py /usr/local/sbin/lecoo-acpi-log"
+echo "       sudo systemctl daemon-reload"
+echo "       sudo systemctl enable --now lecoo-wake-guard lecoo-nic-unbind \\"
+echo "                                  lecoo-acpi-log lecoo-acpi-log-shutdown"
+echo
+echo "  BIOS: ACPI = Auto/Enabled      (mandatory: Disabled voids every table)"
+echo "        Secure Boot = off, or your own keys via sbctl"
+echo "        TPM/fTPM   = keep enabled (a LOCALLY rebuilt table keeps it working)"
+echo "        Fast Boot  = disable if the override is ignored"
+echo "========================================================================"
 echo
 echo "Post-install checks (after reboot with the tables applied):"
 echo "  1. journalctl -b -k | grep 'Table Upgrade'  -> expected: ${#selected[@]} override line(s)"
 echo "  2. ls /sys/bus/acpi/devices/ | grep PTCH    -> PTCH0001:00 (only if DSDT is overridden)"
 echo "  3. ls /dev/tpm0 /dev/tpmrm0                 -> both present, no 90s boot delay"
-echo "  4. shutdown test; suspend (s2idle) test; dmesg | grep DBG_S2I"
+echo "  4. ./tools/ec-probe.sh wake                 -> must stay asleep; no gpio24 delta"
+echo "  5. lecoo-acpi-log report                    -> per-boot suspend/shutdown table"

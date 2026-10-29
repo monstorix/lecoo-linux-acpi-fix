@@ -1,218 +1,215 @@
-# 适用于 Lecoo Pro 14 运行 Linux 的 ACPI DSDT 补丁
+# Lecoo Pro 14（N155A）ACPI 修复 — BIOS 2.5
 
-本仓库包含适用于 **Lecoo Pro 14 (N155A)** 的 DSDT 转储和补丁集。
-这些补丁主要解决以下问题：
-- 修复在 Linux 下笔记本在关机时触发意外重启的 Bug ([参阅 4pad 上的讨论 “关机变成重启”](https://4pda.to/forum/index.php?showtopic=1108499&st=3420#entry141777966))。
-- 尝试解锁 **S3 睡眠状态** （挂起到 RAM）， [虽然在硬件层面不一定能真正起到作用](https://4pda.to/forum/index.php?showtopic=1108499&st=3340#entry141732975)。
-- 修复 WMI 方法的**缓冲区溢出问题**。
-- 解决启动时报错 “ACPI ...device not found” 的问题。
-- 修复 S4 睡眠状态（也就是休眠）下“瞬时唤醒”的问题。
-- 显著提高了 **s2idle** (Modern Standby) 睡眠状态的稳定性，通过拦截误报的电源键事件和限制 GPIO 唤醒来修复随机的“瞬间唤醒”(Instant Wake) 问题。
+[English](README.md) | 简体中文 | [Русский](README_RU.md)
 
-> ### ⚠️ BIOS 2.5+（DSDT OEM Revision `0x01072009`）：请在本机重建后再用；S5 残留问题无论是否覆盖都存在
->
-> 作者本机上，原厂 2.5 固件已自行处理了上述大部分问题：
->
-> | 问题 | 原厂 2.5 实测状态（作者本机） |
-> |---|---|
-> | 关机变重启 | 约 18%（17 次中 3 次），属固件残余缺陷 |
-> | 解锁 S3 | `mem_sleep` 已提供 `[s2idle] deep` |
-> | WMI 缓冲区溢出 | 无 `AE_AML_BUFFER_LIMIT`/WMI 报错 |
-> | `ACPI ... device not found` | 0 次 |
-> | S4 即时唤醒 | 本机不使用休眠（仅 zram） |
-> | s2idle 即时唤醒 | 合盖 2 分 20 秒，无提前唤醒 |
->
-> 此前"不要加载任何覆盖表"的结论已于 **2026-10-27 部分修正**（[issue #6](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/6)）：另一位 2.5 用户用 `rebuild_patch.sh` 基于**自己的 dump** 重建补丁——四张表全部生效、fTPM 正常、s2idle 完全修复——而偶发关机变重启依旧（带补丁约 50%；该机原厂基线未测）。此前"覆盖表本身把 18% 抬到 44%"的说法从未得到统计学支持（3/17 vs 11/25，单表实验 n=1），现已存疑。
->
-> 2.5 上的实用建议：
-> - 绝不要直接使用其他机器上构建的 cpio——用 `rebuild_patch.sh` 基于自己的 dump 重建（外来 DRAM 地址会破坏 fTPM，见 issue #3）；
-> - 若你的机器存在 s2idle（或 Wi-Fi 电源时序）问题，重建后的补丁是合理的修复手段；
-> - 偶发关机变重启（约 20–50%）无论是否覆盖表都会出现，属固件层面问题，尚无任何单处补丁改动被证实与其相关。
->
-> 逐项症状对照（查什么、先修什么）见 [`patches/bios-0x01072009/SYMPTOMS.md`](patches/bios-0x01072009/SYMPTOMS.md)。
+**Lecoo Pro 14（N155A）** 在 **BIOS 2.5**（DSDT OEM revision `0x01072009`）下的 ACPI
+表与补丁。
 
+该固件仍存在两项问题：
 
-### ⚠️ 重要
+- **关机偶尔变为重启。** 关机前解绑有线网卡驱动即可避免。
+- **s2idle 约 0.5 秒后恢复。** ACPI 表的 `_AEI` 中，引脚 `0x0018` 被声明为唤醒源，
+  睡眠期间由网卡触发。此项只能通过修改表解决。
 
-本仓库提供的 `acpi_override` 文件必须在主要 initramfs 文件**之前**加载。
+补丁另包含两项 systemd 服务：一项在开机时关闭会重新启用的唤醒源，另一项在关机时解绑网卡
+驱动。各项修复互不影响，同时解决两项问题时三部分全部安装。
 
-#### ℹ️ 已知的问题和局限
+补丁说明（`CHANGES.md`）与症状对照（`SYMPTOMS.md`）见 `patches/bios-0x01072009/`。
 
-- **安全启动：** 本补丁在安全启动环境下不一定能够开箱即用。根据引导加载器的不同，在安全启动环境下加载自定义 ACPI 设备表通常需要较为复杂的手动自签名及录入过程，有时还需要编辑关键分区的文件。因此，强烈推荐在禁用安全启动后再应用本补丁，以免因配置失误导致系统无法启动。你需要自行解决配置过程中遇到的问题或报错。
+## 开始之前
 
-- **TPM 2.0：** ~~本补丁可能会阻止 fTPM 被 Linux 内核驱动检测到~~ **已修复。** 此前问题的根因是：覆盖表（override DSDT）是一份静态快照，而固件本应在每次开机时把 TPM 设备的启用变量（`TPMF`、`TTDP`、`TPMB`、`FTPM`、`PPIM` 等）运行时补写进 DSDT，静态覆盖表导致这些值全部丢失（参阅[问题 #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3)）。现补丁已改为基于开启 fTPM 状态下的实机 DSDT dump（BIOS 2.5）重建，运行时回填的值已被固化进表内，`/dev/tpm0` 与 `/dev/tpmrm0` 可正常生成，不再有 90 秒的启动延迟。
+### BIOS
 
-- **内存布局敏感性：** 重建后的表内固化了若干来自 dump 时快照的 DRAM 型 ACPI NVS 地址（`PPIM`、`OGNV`、`GNVS`、`NRSB`）。正常启动下它们保持稳定，但若更改内存相关的 BIOS 设置（如 UMA 帧缓冲大小）、更换内存或触发内存重训练、或更新 BIOS 后，这些地址可能漂移。若届时 TPM 或 WMI 出现异常，请重新 dump DSDT 并重建补丁（参见 `build_acpi.sh`）。
+- **ACPI 设为 Auto**（Advanced → ACPI Settings）。设为 Disabled 时不会加载自定义表。
+- **Secure Boot：建议先完成签名配置。** 使用 sbctl 或发行版自带的工具为引导链签名，然后
+  按 2a 的钩子方式加载补丁——表位于 initramfs 或 UKI 内部，随镜像一起签名，无需其他操作。
+  若使用 2b 的单独 cpio 方式，则按引导器的要求为该文件签名或提供校验和。
+- **fTPM 保持开启。** 表由脚本在本机生成，dump 前会确认未加载任何覆盖表，生成的表不影响
+  fTPM。
+- 若表未生效，关闭 **Fast Boot**；部分固件会保留自己的表副本。
 
-## 准备
+### 确认本机使用的引导与 initramfs 方案
 
-1. 从[发布文件](https://github.com/LaVashikk/lecoo-linux-acpi-fix/releases)中下载 **`acpi_override.cpio`** 。
-2. 将其复制到引导分区（通常是 `/boot`）。
+以下步骤适用于 Limine、GRUB、systemd-boot 引导器，以及 mkinitcpio、dracut
+initramfs 工具。执行以下命令确认本机使用的组合：
 
-### 在自己的机器上重建补丁（BIOS 2.5+ 推荐）
-
-补丁表内固化了与固件构建相关的 DRAM 型 ACPI NVS 地址。若你的机器运行相同的 BIOS 版本（DSDT OEM Revision 为 `0x01072009`，即 BIOS 2.5），可以直接从实机 dump 重建整套补丁：
-
-```bash
-sudo ./rebuild_patch.sh        # dump + 打补丁 + 编译 + 打包 acpi_override.cpio
+```
+test -f /etc/mkinitcpio.conf && echo mkinitcpio
+test -f /etc/dracut.conf && echo dracut
+ls /boot/loader/entries/*.conf 2>/dev/null && echo systemd-boot
+test -f /etc/default/grub && echo grub
+test -f /etc/default/limine && echo limine
+ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI（统一内核镜像）"
 ```
 
-脚本会校验 BIOS 版本、fTPM 是否启用、当前启动是否加载了补丁，然后以与地址无关的方式应用全部结构性修复（每项改动的人工审查版 diff 见 `patches/bios-0x01072009/*.changes.diff`），最后编译并打包 `acpi_override.cpio`。若无 root 权限、想基于已有 dump 重建：`ACPI_DUMP_FILE=acpi.out ./rebuild_patch.sh`。
+`/boot/EFI/Linux/` 下存在 `.efi` 文件时，内核与 initramfs 被打包在同一个已签名镜像中
+（UKI）。此时表必须位于该镜像内部，引导器的 initramfs 配置不会起作用。
 
-```bash
+## 第一步：内核参数
+
+将下列参数加入内核命令行。四项在本文所述的配置中同时使用：
+
+| 参数 | 作用 |
+|---|---|
+| `acpi.ec_no_wakeup=1` | 将 EC 的 GPE 从唤醒源中移除，影响关机后的自动上电 |
+| `acpi_osi="!Windows 2020"` | 不再向固件报告 Windows 2020 支持，固件停留在较早（Windows 10）的电源与待机分支 |
+| `acpi=force` | 固件未声明 ACPI 时仍强制启用；多数 UEFI 系统上无可见变化 |
+| `i8042.nomux` | 跳过 PS/2 端口复用探测 |
+
+建议四项一并保留，使电源行为与本文配置保持一致。
+
+| 引导器 | 配置文件与条目 | 生效方式 |
+|---|---|---|
+| Limine | `/etc/default/limine`，`KERNEL_CMDLINE[default]+="..."` | `sudo limine-update` |
+| GRUB（Debian、Ubuntu） | `/etc/default/grub`，`GRUB_CMDLINE_LINUX_DEFAULT="..."` | `sudo update-grub` |
+| GRUB（Arch） | `/etc/default/grub`，`GRUB_CMDLINE_LINUX_DEFAULT="..."` | `sudo grub-mkconfig -o /boot/grub/grub.cfg` |
+| GRUB（Fedora） | `/etc/default/grub`，`GRUB_CMDLINE_LINUX_DEFAULT="..."` | `sudo grub2-mkconfig -o /boot/grub2/grub.cfg` |
+| systemd-boot | `/boot/loader/entries/*.conf`，`options ...` 行 | 条目即时生效 |
+| systemd-boot，条目由 `kernel-install` 生成 | `/etc/kernel/cmdline` | 修改后重装当前内核，或等待下次内核更新 |
+
+`/boot/limine.conf` 由 `limine-update` 生成，应修改 `/etc/default/limine`，否则下次内核
+更新时会被覆盖。
+
+重启后 `cat /proc/cmdline` 中应包含 `acpi.ec_no_wakeup=1`。
+
+## 第二步：生成覆盖表
+
+在目标机器上生成覆盖表，仅覆盖 `ssdt-cpmgpio0`：
+
+```
+sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio
+```
+
+脚本从运行中的固件读取表，将 `_AEI` 中引脚 `0x0018` 的 `ExclusiveAndWake` 改为
+`Exclusive`，并将编译结果复制到 `/etc/initcpio/acpi_override/`。脚本同时检查当前是否
+已加载覆盖表，否则 dump 得到的是修改后的表，而非固件原始表。
+
+该命令写入的是 mkinitcpio 钩子所需的文件，不生成 cpio。使用 dracut 或需要单独 cpio
+的引导器时，改用 `sudo ./rebuild_patch.sh --minimal`（不带 `--no-cpio`），输出中会包含
+`acpi_override.cpio`。
+
+### 2a. mkinitcpio（Arch、CachyOS 及其衍生版）
+
+mkinitcpio 提供 `acpi_override` 钩子，将 `/etc/initcpio/acpi_override/` 下的 `*.aml`
+放入内核最先读取的那段 initramfs。
+
+UKI 由同一套工具生成：CachyOS 上由 `limine-mkinitcpio-hook` 调用 mkinitcpio，
+钩子的输出会自动包含在镜像中。通过同类钩子生成 UKI 的其他
+发行版，行为与此一致。
+
+```
+# /etc/mkinitcpio.conf：在现有 HOOKS 行中加入 acpi_override（建议放在 microcode 之后）
+# 下面为 CachyOS 默认示例，其余钩子保留你自己的配置
+HOOKS=(base systemd autodetect microcode acpi_override kms modconf block keyboard sd-vconsole plymouth filesystems)
+
+sudo mkinitcpio -P          # 传统 initramfs
+sudo limine-update          # Limine 下的 UKI
+```
+
+目录为空时，钩子会以 `No ACPI table override files found` 停止构建：空目录意味着启动
+时不会加载补丁。
+
+<details>
+<summary><b>2b. dracut 与其他 initramfs 工具（Fedora、openSUSE 等使用 dracut 的发行版）</b></summary>
+
+
+dracut 没有对应的钩子，表以单独的非压缩 cpio 形式加载，并排在 initrd 之前。生成方式：
+
+```
+sudo ./rebuild_patch.sh --minimal
 sudo cp acpi_override.cpio /boot/
 ```
 
-接下来请按照相应的引导加载器指南操作。
+`acpi_override.cpio` 必须排在主 initramfs **之前**。各引导器的配置方式：
 
+| 引导器 | 配置文件 | 需添加的条目 | 生效方式 |
+|---|---|---|---|
+| GRUB | `/etc/default/grub` | `GRUB_EARLY_INITRD_LINUX_CUSTOM="acpi_override.cpio"` | 同第一步（按发行版） |
+| systemd-boot | `/boot/loader/entries/*.conf` | 在现有 `initrd` 行之前添加 `initrd /acpi_override.cpio` | 条目即时生效 |
+| Limine | `/etc/default/limine` | 在 `KERNEL_CMDLINE[default]+=` 开头加入 `initrd=/acpi_override.cpio` | `sudo limine-update` |
 
+由钩子生成的 UKI 按 2a 处理，不使用该 cpio。只有当镜像由手工组装时，才需要把 cpio
+列在主 initramfs 之前。
 
-## 方法 1: Systemd-boot (Arch, Pop!_OS)
+`GRUB_EARLY_INITRD_LINUX_CUSTOM` 中的路径相对于 `/boot`。`/boot` 即为 EFI 系统分区的
+系统上，同样使用相对路径。
 
-1. 找到你的引导配置文件。它通常位于 `/boot/loader/entries/`，后缀为 `.conf` （例如 `arch.conf` 或 `linux.conf`）。
-2. 打开并编辑：
-```bash
-sudo nano /boot/loader/entries/arch.conf
-```
+使用 BLS 条目的发行版（如 Fedora）上，`GRUB_EARLY_INITRD_LINUX_CUSTOM` 可能不生效，请按该发行版的方式把 cpio 放在 initrd 列表最前。
 
-3. 将 `initrd /acpi_override.cpio` 添加到主要 initramfs 路径**之前**。
-
-**以下是大致的格式:**
-```text
-title   Arch Linux
-linux   /vmlinuz-linux
-initrd  /acpi_override.cpio      # <-- override 文件必须放在 initramfs 前面！！
-initrd  /initramfs-linux.img
-options root=UUID=... rw
-```
-
-4. 保存文件 （nano 中按下 `Ctrl+O` 再按 `Enter`）随后关闭编辑器（ 按下 `Ctrl+X`）。
-5. 重启以验证补丁是否起作用
-
-## 方法 2: GRUB (Ubuntu, Fedora 等系统)
-
-对于 GRUB，最好设置一项特殊变量，以确保修改在内核更新后仍然保留。
-
-1. 打开 GRUB 配置文件：
-```bash
-sudo nano /etc/default/grub
-```
-
-2. 找到 `GRUB_EARLY_INITRD_LINUX_CUSTOM` 变量。
-* **如果它存在：** 则将补丁路径添加进去
-* **如果不存在：** 则补充以下配置行到文件中：
-
-
-```bash
-GRUB_EARLY_INITRD_LINUX_CUSTOM="acpi_override.cpio"
-```
-*（注意：此处使用相对路径，默认所有文件位于 /boot 分区根目录。如果该设置无法工作，请尝试写入完整路径 `"/boot/acpi_override.cpio"`）。*
-
-3. 更新 GRUB 配置:
-* **Arch Linux:**
-```bash
-sudo grub-mkconfig -o /boot/grub/grub.cfg
-```
-
-* **Ubuntu/Debian:**
-```bash
-sudo update-grub
-```
-
-## 方法 3: Limine Bootloader (CachyOS, Arch 等系统)
-
-确保 `limine-dracut-support` 或 `limine-mkinitcpio-hook` 已安装到系统中。
-1. 找到并打开 Limine 配置文件，路径通常位于 `/boot/limine.conf`。
-2. 找到系统的主启动项（通常位第一项）并在 initramfs 前添加新的 `module_path` 行。以下是 CachyOS 的例子：
-
-```text
-/+CachyOS
-  //linux-cachyos
-  ### This kernel entry is auto-generated by limine-entry-tool
-  comment: Kernel version: X.X.X.X-X-cachyos
-  comment: kernel-id=linux-cachyos
-  protocol: linux
-  module_path: boot():/acpi_override.cpio   # <-- 将模块行写在此处， "boot():/" 代表 boot 分区根目录。
-  module_path: boot():/(random path)/linux-cachyos/initramfs-linux-cachyos#{HASH}
-  path: boot():/(random path)/linux-cachyos/vmlinuz-linux-cachyos#{HASH}
-  cmdline: quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX
-```
-3. 保存文件并重启，测试补丁是否正常运作。
-- 如果一切良好，则可以修改 `/etc/default/limine` 中的 `KERNEL_CMDLINE` 参数，确保补丁在内核更新后仍然保持应用。
-```text
-# 将补丁路径添加到 KERNEL_CMDLINE 的最前面，系统在更新引导时将自动转换其为模块路径（module_path）。
-# “default”意味着所有已安装内核都会默认应用此补丁参数。
-# 如果你只想为单独内核应用补丁，则可以将其改为对应的启动条目名称，如”linux-cachyos“。
-                          ↓  
-KERNEL_CMDLINE[default]+="initrd=/acpi_override.cpio quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX"
-```
-5. 运行 `sudo limine-update` 为内核应用更改。
-
-<details>
-    <summary>利用 Limine 将补丁与安全启动配合使用（高级用户）</summary>
-  
-要将补丁与安全启动配合使用，你需要将自定义安全密钥写入主板固件。以下操作通常只需要执行一次。
-
-> 本节信息基于 [CachyOS 安全启动配置指南](https://wiki.cachyos.org/configuration/secure_boot_setup/#enabling-setup-mode-in-uefi)与 [ArchWiki - Limine](https://wiki.archlinux.org/title/Limine)。建议在进行实际配置前仔细阅读这些指南。
-
-<details>
-<summary>查看步骤</summary>
-
-配置之前请确保安全启动处于**关闭**状态。
-1. 进入 BIOS 配置界面，找到 `Security > Secure Boot > Expert Key Management > Factory Key Provision`。将该项设为 `Disable`（禁用），然后按 F4 保存并重启。
-2. 再次进入 BIOS，找到 `Security > Secure Boot > Reset to Setup Mode`，进入并选择 "Yes"。此时安全启动模块应处于 “Setup”（配置）模式。
-3. 重启进入系统，检查 sbctl 工具是否已安装。如果未安装，请执行以下命令安装：
-```bash
-sudo pacman -S sbctl
-```
-4. 执行 `sudo sbctl status` 检查主板是否已成功进入配置模式。
-5. 执行 `sudo sbctl create-keys` 创建自定义密钥。
-6. 执行 `sudo sbctl enroll-keys --microsoft --firmware-builtin` 将密钥录入 EFI。
-7. 再次执行 `sudo sbctl status` 检查密钥是否成功安装。
-8. 打开 `/etc/default/limine` 文件，修改以下配置为 “yes” 以启用 Limine 自动校验值录入功能：
-```
-ENABLE_ENROLL_LIMINE_CONFIG=yes
-```
-9. 按照上方的介绍，将补丁路径添加到默认内核指令。
-10. 你需要在 Limine 配置文件中为 Limine 壁纸及补丁模块补充 BLAKE2B 校验值，校验值前面需要添加 `#` ：
-```
-sudo b2sum /boot/limine-splash.png | cut -d' ' -f1
-```
-```
-sudo b2sum /boot/acpi_override.cpio | cut -d' ' -f1
-```
-```
-# /boot/limine.conf
-wallpaper: boot():/limine-splash.png#{你的校验值}
-
-module_path: boot():/acpi_override.cpio#{你的校验值}
-```
-**警告: 校验值错误会导致引导报错！！** Limine 只需要对自身可执行文件进行签名，即可使用安全启动引导，其余模块文件的检查由加载器本身执行。因此，你只需要保证 Limine 配置文件中所有模块、壁纸等文件的 BLAKE2B 校验值准确，即可顺利启动。
-
-11. 保存文件并运行 `sudo limine-enroll-config` 和 `sudo limine-update` 以将新配置写入引导。
-12. 打开 `/boot/limine.conf` 确认所有模块都已具有 BLAKE2B 校验值。
-13. 重启到 BIOS 配置界面，打开安全启动选项后，再次重启测试。补丁更新后，你需要按照步骤 10 和 11 自行将新的校验值补充到配置文件中。
+开启 Secure Boot 时，单独加载的 cpio 不在 initramfs 的签名范围内，需要在引导器配置中
+提供该文件自己的签名或校验和。因此可用时优先使用 2a 的钩子方式。
 
 </details>
+
+## 第三步：systemd 服务
+
+| 单元 | 作用 |
+|---|---|
+| `lecoo-wake-guard.service` | 关闭 i8042、GPP2、XHC0/1/3/4、NHI0 的唤醒 |
+| `lecoo-nic-unbind.service` | 关机时解绑 `r8169` |
+
+`/proc/acpi/wakeup` 的设置在重启后不保留：唤醒源会在每次开机时重新启用，由第一项服务
+关闭。第二项在关机时运行，此时会话已结束，内核尚未关闭驱动。正常使用期间以太网可用。
+
+另有两项单元仅用于记录，将开机、挂起、关机事件写入 `/var/log/lecoo-acpi/events.jsonl`，
+`lecoo-acpi-log report` 将其输出为表格。
+
+```
+sudo install -m755 patches/bios-0x01072009/systemd/lecoo-wake-guard.sh \
+                   patches/bios-0x01072009/systemd/lecoo-nic-unbind.sh /usr/local/sbin/
+sudo install -m755 patches/bios-0x01072009/systemd/50-lecoo-acpi-log \
+                   /usr/lib/systemd/system-sleep/
+sudo install -m644 patches/bios-0x01072009/systemd/*.service /etc/systemd/system/
+sudo install -m755 tools/lecoo-acpi-log.py /usr/local/sbin/lecoo-acpi-log
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now lecoo-wake-guard lecoo-nic-unbind \
+                            lecoo-acpi-log lecoo-acpi-log-shutdown
+```
+
+这些单元依赖 systemd 与 `/usr/lib/systemd/system-sleep` 钩子接口。未使用 systemd 的系统
+只有第二步的 ACPI 表可用。
+
+## 验证
+
+下次开机后：
+
+```
+journalctl -b -k | grep "Table Upgrade"     # 一行：SSDT- AMD-CPMGPIO0
+ls /sys/bus/acpi/devices/ | grep PTCH       # 无输出：DSDT 未被替换
+grep -E "XHC|NHI|GPP2" /proc/acpi/wakeup    # 全部 *disabled
+```
+
+挂起一次并检查计数：
+
+```
+./tools/ec-probe.sh wake
+```
+
+该命令记录 ACPI 计数、进入挂起，唤醒后输出差值。若计数无变化，且仅按键可以唤醒，说明
+表已生效。
+
+## 撤销
+
+<details>
+<summary>具体命令</summary>
+
+```
+# mkinitcpio（步骤 2a）
+sudo sed -i 's/ acpi_override//' /etc/mkinitcpio.conf
+sudo rm -f /etc/initcpio/acpi_override/*.aml
+sudo mkinitcpio -P          # UKI 则为：sudo limine-update
+
+# 单独 cpio（步骤 2b）
+sudo rm -f /boot/acpi_override.cpio
+# 删除步骤 2b 中添加的条目，再按第一步的方式重新生成配置
+
+sudo systemctl disable --now lecoo-wake-guard lecoo-nic-unbind \
+                            lecoo-acpi-log lecoo-acpi-log-shutdown
+```
+
 </details>
-
-
-## 验证补丁正常工作的方法
-
-重启后，打开终端并执行：
-
-```bash
-ls /sys/bus/acpi/devices/ | grep PTCH
-```
-
-如果补丁加载成功，你应该能看到如下输出：
-
-```text
-PTCH0001:00
-```
-
-如果出现了上述输出（即内核成功创建了该设备的目录），则说明补丁已经被成功加载。此时你可以尝试关机，测试关机修复是否能够正常工作。
 
 ## 许可
 
-ACPI 表归其各自所有者所有。所提供的修改仅用于互操作性或修复目的。
+ACPI 表归各自的所有者。这里的修改仅用于互操作与维修。

@@ -1,246 +1,237 @@
-# ACPI DSDT patches for Lecoo Pro 14 (Linux)
+# ACPI fixes for Lecoo Pro 14 (N155A) — BIOS 2.5
 
-🇷🇺 [Russian Readme here](README_RU.md) | 🇨🇳 [中文自述](README_ZH.md)
+🇬🇧 English | 🇨🇳 [中文](README_ZH.md) | 🇷🇺 [Русский](README_RU.md)
 
-DSDT dump and patch set for **Lecoo Pro 14 (N155A)**.
-This patch addresses the following issues:
-- Fixes the bug where the laptop reboots instead of powering off in Linux ([Shutdown turns into Reboot](https://4pda.to/forum/index.php?showtopic=1108499&st=3420#entry141777966))..
-- Unlocks the **S3 state** (Suspend to RAM), [although it likely does not work on the hardware level](https://4pda.to/forum/index.php?showtopic=1108499&st=3340#entry141732975).
-- Fixes **buffer overflow issues** for WMI methods.
-- Resolves "ACPI ...device not found" errors during system boot.
-- Fixes the "instant wake" issue for the S4 state (hibernation).
-- Significantly improves the stability of the **s2idle** sleep state (Modern Standby) and fixes random "instant wake" issues by blocking spurious events.
+Dump and patch set for **Lecoo Pro 14 (N155A)** with **BIOS 2.5**
+(DSDT OEM revision `0x01072009`).
 
-> ### ⚠️ BIOS 2.5+ (`0x01072009`): rebuild locally — the S5 remnant stays either way
->
-> On the author's unit, stock 2.5 firmware already handles most of the issues above:
->
-> | Issue | State on stock 2.5 (measured, author's unit) |
-> |---|---|
-> | Shutdown → reboot | ~18 % of shutdowns (3/17) — firmware-level remnant |
-> | S3 unlock | `mem_sleep` already offers `[s2idle] deep` |
-> | WMI buffer overflow | no `AE_AML_BUFFER_LIMIT` / WMI errors logged |
-> | `ACPI ... device not found` | 0 occurrences |
-> | S4 instant wake | hibernation is not used (zram swap only) |
-> | s2idle instant wake | 2 min 20 s suspend, no spurious wake-up |
->
-> The earlier blanket "do not load any override" recommendation was **partially
-> revised on 2026-10-27** after independent validation
-> ([issue #6](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/6)): a
-> second N155A on 2.5 rebuilt the patch from its **own dump** — all 4 tables
-> applied, fTPM fine, s2idle fully fixed — while the intermittent
-> shutdown→reboot remained (~50 % with the patch; the stock baseline on that
-> unit is unknown). The previously claimed 18 % → 44 % jump caused by the
-> override itself was never statistically established (3/17 vs 11/25,
-> single-table runs n = 1) and is now in doubt.
->
-> Practical guidance for 2.5:
-> - never reuse a cpio built on another machine — rebuild with
->   `rebuild_patch.sh` from your own dump (foreign DRAM addresses break fTPM,
->   see issue #3);
-> - if s2idle (or Wi-Fi power sequencing) misbehaves on your unit, the rebuilt
->   patch is a reasonable fix;
-> - the intermittent shutdown→reboot (~20–50 %) must be expected with or
->   without the override — it is firmware-level, and no single patch edit has
->   been shown to influence it.
->
-> Per-symptom reference (what to check, what to fix first) is in
-> [`patches/bios-0x01072009/SYMPTOMS.md`](patches/bios-0x01072009/SYMPTOMS.md).
+Two issues remain on this firmware:
 
+- **Shutdown occasionally results in a reboot.** Unbinding the wired network driver
+  before power off prevents it.
+- **s2idle returns after approximately 0.5 s.** Pin `0x0018` is declared as a wake
+  source in the ACPI tables and is driven by the network card during sleep. Only the
+  table can change this.
 
-### ⚠️ Important
+The patch also contains two systemd services: one disables the wake sources that are
+re-enabled after each boot, the other unbinds the network driver at power off. The fixes
+are independent; installing all three covers both issues.
 
-The `acpi_override` file must be loaded **BEFORE** the main initramfs image.
+Patch notes (`CHANGES.md`) and a symptom reference (`SYMPTOMS.md`) are in
+`patches/bios-0x01072009/`.
 
-#### ℹ️ Known Limitations and Issues
+## Before you start
 
-- **Secure Boot:** This patch will not work out-of-the-box if Secure Boot **is enabled**. Depending on the bootloader used, loading custom ACPI tables under Secure Boot may require complex manual signing and enrollment of your own keys or files modification in critical partitions. It is highly recommended that you disable Secure Boot to use this patch to avoid system down by misconfiguration. You will need to resolve any issues or errors that arise during the configuration process yourself.
+### BIOS
 
-- **TPM 2.0:** ~~This patch may prevent fTPM from being detected by the Linux kernel's built-in drivers~~ **Fixed.** The previous limitation was caused by the override DSDT being a static snapshot: the firmware normally patches the TPM device's enablement variables (`TPMF`, `TTDP`, `TPMB`, `FTPM`, `PPIM`, ...) into the DSDT at every boot, and these values were lost when the kernel loaded the static override (see [issue #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3)). The tables are now rebuilt from a live DSDT dump taken with fTPM enabled (BIOS 2.5), so the runtime-patched values are baked in and `/dev/tpm0`/`/dev/tpmrm0` work without the 90-second boot delay.
+- **ACPI = Auto** (Advanced → ACPI Settings). With ACPI disabled, no custom table is
+  loaded.
+- **Set up Secure Boot signing first.** Sign the boot chain with sbctl or the tool
+  shipped by your distribution, then load the patch with the hook from step 2a — the
+  tables are inside the initramfs or UKI and are signed together with it. With the
+  separate cpio of step 2b, sign that file or add a checksum as the bootloader expects.
+- **Keep fTPM enabled.** The table is generated locally, and the script verifies before
+  dumping that no override is loaded; the resulting table does not affect fTPM.
+- If the table has no effect, disable **Fast Boot**; some firmware retains its own copy
+  of the tables.
 
-- **Memory layout sensitivity:** The rebuilt tables hardcode several DRAM-resident ACPI NVS addresses (`PPIM`, `OGNV`, `GNVS`, `NRSB`) captured at dump time. They are stable across normal boots, but may shift if you change memory-related BIOS settings (e.g. UMA frame buffer size), replace/retrain RAM, or after a BIOS update. If TPM or WMI misbehaves after such a change, re-dump your DSDT and rebuild the patch (see `build_acpi.sh`).
+### Which files apply to your system
 
-## Preparation
+The steps below cover the Limine, GRUB and systemd-boot bootloaders and the mkinitcpio
+and dracut initramfs generators. Run the following commands to see which are present:
 
-1. Download the **`acpi_override.cpio`** file from the [Releases](https://github.com/LaVashikk/lecoo-linux-acpi-fix/releases) section.
-2. Copy it to the root of your boot partition (usually `/boot`).
-
-### Rebuilding the patch on your own machine (recommended for BIOS 2.5+)
-
-The patch tables embed DRAM-resident ACPI NVS addresses that are firmware-build
-specific. If your machine runs the same BIOS revision (DSDT OEM revision
-`0x01072009`, i.e. BIOS 2.5), you can rebuild everything from a live dump with:
-
-```bash
-sudo ./rebuild_patch.sh        # dump + patch + compile + pack acpi_override.cpio
+```
+test -f /etc/mkinitcpio.conf && echo mkinitcpio
+test -f /etc/dracut.conf && echo dracut
+ls /boot/loader/entries/*.conf 2>/dev/null && echo systemd-boot
+test -f /etc/default/grub && echo grub
+test -f /etc/default/limine && echo limine
+ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI (unified kernel image)"
 ```
 
-The script verifies the BIOS revision, that fTPM is enabled, that the patch is
-not loaded in the current boot, applies the structural fixes in an
-address-agnostic way (see `patches/bios-0x01072009/*.changes.diff` for a human
-review of every change), compiles the tables and packs `acpi_override.cpio`.
-To rebuild from an existing dump without root: `ACPI_DUMP_FILE=acpi.out ./rebuild_patch.sh`.
+If `/boot/EFI/Linux/` contains `.efi` files, the kernel and initramfs are packed into a
+single signed image (UKI). In that case the tables have to be inside that image, and the
+configuration files of the bootloader are not used for the initramfs.
 
-The patch targets the **2.x firmware behaviour**: every deliberate deviation
-from the 2.x defaults is documented with its rationale, revert procedure and a
-verification matrix in [`patches/bios-0x01072009/CHANGES.md`](patches/bios-0x01072009/CHANGES.md).
-The 1.x dump in `origin/` is treated as a snapshot only — it is never used as a
-behavioural baseline for 2.x.
+## Step 1 — kernel parameters
 
-```bash
+Add the parameters below to the kernel command line. All four are used together in the
+configuration described here:
+
+| Parameter | Effect |
+|---|---|
+| `acpi.ec_no_wakeup=1` | removes the EC GPE from the wake sources; affects the power-on after shutdown |
+| `acpi_osi="!Windows 2020"` | the firmware no longer reports Windows 2020 support and stays on the earlier (Windows 10) power and standby path |
+| `acpi=force` | keeps ACPI enabled even when the firmware does not announce it; no visible change on most UEFI systems |
+| `i8042.nomux` | skips PS/2 port multiplexing detection |
+
+Keeping all four keeps the power behaviour identical to the configuration described here.
+
+| Bootloader | File and entry | Apply |
+|---|---|---|
+| Limine | `/etc/default/limine`, `KERNEL_CMDLINE[default]+="..."` | `sudo limine-update` |
+| GRUB (Debian, Ubuntu) | `/etc/default/grub`, `GRUB_CMDLINE_LINUX_DEFAULT="..."` | `sudo update-grub` |
+| GRUB (Arch) | `/etc/default/grub`, `GRUB_CMDLINE_LINUX_DEFAULT="..."` | `sudo grub-mkconfig -o /boot/grub/grub.cfg` |
+| GRUB (Fedora) | `/etc/default/grub`, `GRUB_CMDLINE_LINUX_DEFAULT="..."` | `sudo grub2-mkconfig -o /boot/grub2/grub.cfg` |
+| systemd-boot | `/boot/loader/entries/*.conf`, line `options ...` | entries are read directly |
+| systemd-boot, entries managed by `kernel-install` | `/etc/kernel/cmdline` | reinstall the current kernel after editing, or wait for the next kernel update |
+
+`/boot/limine.conf` is generated by `limine-update`; edit `/etc/default/limine` instead,
+otherwise the change is overwritten on the next kernel update.
+
+After rebooting, `cat /proc/cmdline` must contain `acpi.ec_no_wakeup=1`.
+
+## Step 2 — building the override table
+
+Generate the override table on the target machine; only `ssdt-cpmgpio0` is overridden:
+
+```
+sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio
+```
+
+The script reads the tables from the running firmware, changes `ExclusiveAndWake` to
+`Exclusive` for pin `0x0018` in `_AEI`, and copies the compiled output to
+`/etc/initcpio/acpi_override/`. It also verifies that no override is currently loaded,
+since the dump would otherwise contain the modified table instead of the firmware
+original.
+
+This command writes the files used by the mkinitcpio hook and does not produce a cpio.
+For dracut, or for a bootloader that loads a separate cpio, use
+`sudo ./rebuild_patch.sh --minimal` (without `--no-cpio`); the output then includes
+`acpi_override.cpio`.
+
+### 2a. mkinitcpio (Arch, CachyOS, and derivatives)
+
+mkinitcpio provides a hook named `acpi_override`. It places every `*.aml` from
+`/etc/initcpio/acpi_override/` into the part of the initramfs read by the kernel first.
+
+The UKI is built by the same tool: on CachyOS, `limine-mkinitcpio-hook` calls mkinitcpio,
+and the hook output is included automatically. Distributions that generate their UKI
+through a comparable hook behave the same way.
+
+```
+# /etc/mkinitcpio.conf: add acpi_override to the existing HOOKS line (after microcode)
+# The line below is the CachyOS default example; keep your other hooks as they are
+HOOKS=(base systemd autodetect microcode acpi_override kms modconf block keyboard sd-vconsole plymouth filesystems)
+
+sudo mkinitcpio -P          # classic initramfs
+sudo limine-update          # UKI on Limine
+```
+
+If the directory is empty, the hook stops the build with `No ACPI table override files
+found`: an empty directory means the patch would not be loaded on that boot.
+
+<details>
+<summary><b>2b. dracut and other initramfs generators (Fedora, openSUSE, ...)</b></summary>
+
+
+dracut has no equivalent hook, so the table is loaded as a separate uncompressed cpio
+placed before the initrd. Build it with:
+
+```
+sudo ./rebuild_patch.sh --minimal
 sudo cp acpi_override.cpio /boot/
-
 ```
 
-Next, follow the instructions for your specific bootloader.
+`acpi_override.cpio` must be listed **before** the main initramfs. Each bootloader has
+its own way to express that:
 
+| Bootloader | File | Entry to add | Apply |
+|---|---|---|---|
+| GRUB | `/etc/default/grub` | `GRUB_EARLY_INITRD_LINUX_CUSTOM="acpi_override.cpio"` | as in step 1 (per distribution) |
+| systemd-boot | `/boot/loader/entries/*.conf` | `initrd /acpi_override.cpio` above the existing `initrd` line | nothing |
+| Limine | `/etc/default/limine` | prefix `KERNEL_CMDLINE[default]+="initrd=/acpi_override.cpio ..."` | `sudo limine-update` |
 
+UKIs produced by a hook are handled as in 2a and do not use this cpio. Only an image
+assembled by hand needs the cpio listed before the main initramfs in the tool's initrd
+list.
 
-## Method 1: Systemd-boot (Arch, Pop!_OS)
+The path in `GRUB_EARLY_INITRD_LINUX_CUSTOM` is relative to `/boot`. On systems where
+`/boot` is the EFI system partition, use the same relative form.
 
-1. Locate your bootloader configuration file. It is usually found in `/boot/loader/entries/` and has a `.conf` extension (e.g., `arch.conf` or `linux.conf`).
-2. Open it for editing:
-```bash
-sudo nano /boot/loader/entries/arch.conf
-```
+On distributions that use BLS entries (Fedora), `GRUB_EARLY_INITRD_LINUX_CUSTOM` may not
+take effect; put the cpio at the front of the initrd list the way the distribution
+prescribes.
 
-3. Add the line `initrd /acpi_override.cpio` **BEFORE** the main initramfs line.
-**Example of how it should look:**
-```text
-title   Arch Linux
-linux   /vmlinuz-linux
-initrd  /acpi_override.cpio      # <-- override MUST be first!!
-initrd  /initramfs-linux.img
-options root=UUID=... rw
-```
-
-4. Save the file (`Ctrl+O`, `Enter`) and close it (`Ctrl+X`).
-5. Done. Reboot.
-
-## Method 2: GRUB (Ubuntu, Fedora, etc.)
-
-For GRUB, it is better to use a special variable so the settings persist after kernel updates.
-
-1. Open the GRUB configuration file:
-```bash
-sudo nano /etc/default/grub
-```
-
-2. Find the `GRUB_EARLY_INITRD_LINUX_CUSTOM` variable.
-* **If it exists:** Add our file to it.
-* **If it doesn't exist:** Add the line to the end of the file:
-
-
-```bash
-GRUB_EARLY_INITRD_LINUX_CUSTOM="acpi_override.cpio"
-```
-*(Note: The path is relative to the /boot root. If it doesn't work, try `"/boot/acpi_override.cpio"`).*
-
-3. Update the GRUB configuration:
-* **Arch Linux:**
-```bash
-sudo grub-mkconfig -o /boot/grub/grub.cfg
-```
-
-* **Ubuntu/Debian:**
-```bash
-sudo update-grub
-```
-
-## Method 3: Limine Bootloader (CachyOS, Arch, etc.)
-
-Make sure `limine-dracut-support` or `limine-mkinitcpio-hook` installed in your system. 
-1. Locate and open the Limine configuration file. It is usually found in the `/boot/limine.conf`.
-2. Find your main boot entry (usually the first one) and add a new `module_path` line for the patch before initramfs. Here we will use CachyOS as an example:
-
-```conf
-/+CachyOS
-  //linux-cachyos
-  ### This kernel entry is auto-generated by limine-entry-tool
-  comment: Kernel version: X.X.X.X-X-cachyos
-  comment: kernel-id=linux-cachyos
-  protocol: linux
-  module_path: boot():/acpi_override.cpio   # <-- Add your new module path here， "boot():/" means root of boot partition.
-  module_path: boot():/(random path)/linux-cachyos/initramfs-linux-cachyos#{HASH}
-  path: boot():/(random path)/linux-cachyos/vmlinuz-linux-cachyos#{HASH}
-  cmdline: quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX
-```
-3. Save the file and Reboot and check everything is working correctly. 
-4. If everything is working correctly, you can modify the KERNEL_CMDLINE in `/etc/default/limine` to ensure that the patch remains applied after the kernel is updated.
-```text
-# Add the patch path as an initrd to the line beginning; the hooks will automatically convert it to a module_path when updating the bootloader.
-# “[default]” means that the parameters will be applied to all installed kernels. 
-# If you only wish to apply it to a specific kernel, you can change it to the name of the corresponding boot entry, such as “linux-cachyos”.
-                          ↓  
-KERNEL_CMDLINE[default]+="initrd=/acpi_override.cpio quiet nowatchdog splash rw rootflags=subvol=/@ root=UUID=XXX"
-```
-5. Run `sudo limine-update` to apply the changes.
-
-<details>
-    <summary>Configure the patch for using with Secure Boot (For advanced users)</summary>
-  
-In order to use this patch with Secure Boot, a custom secure key must be written to the firmware. The following steps usually only need to be done once:
-
-> This section is based on the information from [CachyOS Secure Boot Setup Guide](https://wiki.cachyos.org/configuration/secure_boot_setup/#enabling-setup-mode-in-uefi) and [ArchWiki - Limine](https://wiki.archlinux.org/title/Limine). We recommend reading them before carrying out the actual setup.
-
-<details>
-<summary>See the steps</summary>
-
-Make sure the Secure Boot has been **disabled** before doing the configuration.
-1. Boot to BIOS Setup and locate `Security > Secure Boot > Expert Key Management > Factory Key Provision`. Set this to `Disable` and then press F4 to save and reboot.
-2. Go back to BIOS Setup and locate `Security > Secure Boot > Reset to Setup Mode`, then select "Yes". The BIOS Secure Boot Module should be in Setup mode now.
-3. Boot into the system and check whether sbctl is installed. If not, install it using the following commands:
-```
-sudo pacman -S sbctl
-```
-4. Run `sudo sbctl status` to check whether Secure Boot has actually entered Setup Mode.
-5. Create the keys by running `sudo sbctl create-keys`.
-6. Enroll the new keys in EFI by running `sudo sbctl enroll-keys --microsoft --firmware-builtin`.
-7. Run `sudo sbctl status` again to check that the keys have been installed successfully.
-8. Change the following settings to yes in the `/etc/default/limine` file to enable automatic checksum enrollment:
-```
-ENABLE_ENROLL_LIMINE_CONFIG=yes
-```
-9. Use the above steps to add `KERNEL_CMDLINE` for the patch.
-10. Generate BLAKE2B checksums for extra wallpapers and modules since they are not signed by default, then add them to Limine configuration file, remembering to put a `#` before checksums: 
-```
-sudo b2sum /boot/limine-splash.png | cut -d' ' -f1
-```
-```
-sudo b2sum /boot/acpi_override.cpio | cut -d' ' -f1
-```
-```
-# /boot/limine.conf
-wallpaper: boot():/limine-splash.png#{YOUR HASH}
-
-module_path: boot():/acpi_override.cpio#{YOUR HASH}
-```
-**WARNING: Wrong checksum will make the bootloader panic!!** Limine only needs to sign its EFI binaries itself to boot with Secure Boot, other files are being checked inside the bootloader. Therefore, all you need to do is make sure the BLAKE2B checksums for all the module files in the Limine configuration are correct.
-
-11. Save the file and run `sudo limine-enroll-config` and `sudo limine-update` to write the configuration to the bootloader.
-12. Open `/boot/limine.conf` to check if every module has a BLAKE2B checksum.
-13. Reboot to BIOS, enable Secure Boot then reboot again to check everything is working correctly. If the patch needs updating, you will need to add the new checksum to the configuration file yourself, following steps 10 and 11.
-</details>
+With Secure Boot enabled, a separately loaded cpio is not covered by the signature of
+the initramfs, so that file needs its own signature or checksum in the bootloader
+configuration. Therefore the hook from 2a is preferable where it is available.
 
 </details>
 
+## Step 3 — systemd services
 
-## How to verify the patch is working
+| Unit | Function |
+|---|---|
+| `lecoo-wake-guard.service` | disables wake from i8042, GPP2, XHC0/1/3/4, NHI0 |
+| `lecoo-nic-unbind.service` | unbinds `r8169` at power off |
 
-After rebooting, open a terminal and run:
+`/proc/acpi/wakeup` is not persistent: the wake sources are enabled again after each
+boot, and the first service disables them. The second runs at shutdown, after the
+session has ended and before the kernel shuts the drivers down. Ethernet remains
+available during normal operation.
 
-```bash
-ls /sys/bus/acpi/devices/ | grep PTCH
+Two further units record boot, suspend and shutdown events in
+`/var/log/lecoo-acpi/events.jsonl`; `lecoo-acpi-log report` prints them as a table.
+
+```
+sudo install -m755 patches/bios-0x01072009/systemd/lecoo-wake-guard.sh \
+                   patches/bios-0x01072009/systemd/lecoo-nic-unbind.sh /usr/local/sbin/
+sudo install -m755 patches/bios-0x01072009/systemd/50-lecoo-acpi-log \
+                   /usr/lib/systemd/system-sleep/
+sudo install -m644 patches/bios-0x01072009/systemd/*.service /etc/systemd/system/
+sudo install -m755 tools/lecoo-acpi-log.py /usr/local/sbin/lecoo-acpi-log
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now lecoo-wake-guard lecoo-nic-unbind \
+                            lecoo-acpi-log lecoo-acpi-log-shutdown
 ```
 
-You should see the following output:
+The services use systemd and the `/usr/lib/systemd/system-sleep` hook interface. On a
+system without systemd, only the ACPI table from step 2 applies.
 
-```text
-PTCH0001:00
+## Verification
+
+After the next boot:
+
+```
+journalctl -b -k | grep "Table Upgrade"     # one line: SSDT- AMD-CPMGPIO0
+ls /sys/bus/acpi/devices/ | grep PTCH       # no output: the DSDT is not replaced
+grep -E "XHC|NHI|GPP2" /proc/acpi/wakeup    # all *disabled
 ```
 
-If this directory is present, the patch has been applied successfully by the kernel. Try shutting down the laptop to test the fix.
+Suspend once and inspect the counters:
+
+```
+./tools/ec-probe.sh wake
+```
+
+The command records the ACPI counters, suspends, and prints the differences after
+wake-up. If no counter changes and the machine wakes only on a key press, the table is
+active.
+
+## Rollback
+
+<details>
+<summary>Commands</summary>
+
+```
+# mkinitcpio (step 2a)
+sudo sed -i 's/ acpi_override//' /etc/mkinitcpio.conf
+sudo rm -f /etc/initcpio/acpi_override/*.aml
+sudo mkinitcpio -P          # or: sudo limine-update for UKI
+
+# separate cpio (step 2b)
+sudo rm -f /boot/acpi_override.cpio
+# remove the entry added in step 2b, then regenerate as in step 1
+
+sudo systemctl disable --now lecoo-wake-guard lecoo-nic-unbind \
+                            lecoo-acpi-log lecoo-acpi-log-shutdown
+```
+
+</details>
 
 ## License
 
-ACPI tables are the property of their respective owners. Modifications are provided for interoperability/repair purposes only.
+ACPI tables are the property of their respective owners. Modifications are provided
+for interoperability/repair purposes only.
