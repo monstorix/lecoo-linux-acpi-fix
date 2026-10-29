@@ -83,11 +83,13 @@ After rebooting, `cat /proc/cmdline` must contain `acpi.ec_no_wakeup=1`.
 
 ## Step 2 — building the override table
 
-Generate the override table on the target machine; only `ssdt-cpmgpio0` is overridden:
+Generate the override table on the target machine; only `ssdt-cpmgpio0` is overridden.
+The command depends on the initramfs generator:
 
-```
-sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio
-```
+| initramfs generator | Command | Loading |
+|---|---|---|
+| mkinitcpio (Arch, CachyOS, ...) | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | step 2a |
+| dracut and others | `sudo ./rebuild_patch.sh --minimal` | step 2b |
 
 The script reads the tables from the running firmware, changes `ExclusiveAndWake` to
 `Exclusive` for pin `0x0018` in `_AEI`, and copies the compiled output to
@@ -95,28 +97,29 @@ The script reads the tables from the running firmware, changes `ExclusiveAndWake
 since the dump would otherwise contain the modified table instead of the firmware
 original.
 
-This command writes the files used by the mkinitcpio hook and does not produce a cpio.
-For dracut, or for a bootloader that loads a separate cpio, use
-`sudo ./rebuild_patch.sh --minimal` (without `--no-cpio`); the output then includes
-`acpi_override.cpio`.
+The mkinitcpio path does not produce a cpio: the hook embeds the tables directly. dracut
+has no such hook, and its command generates `acpi_override.cpio` in the repository
+directory.
 
 ### 2a. mkinitcpio (Arch, CachyOS, and derivatives)
 
 mkinitcpio provides a hook named `acpi_override`. It places every `*.aml` from
-`/etc/initcpio/acpi_override/` into the part of the initramfs read by the kernel first.
-
-The UKI is built by the same tool: on CachyOS, `limine-mkinitcpio-hook` calls mkinitcpio,
-and the hook output is included automatically. Distributions that generate their UKI
-through a comparable hook behave the same way.
+`/etc/initcpio/acpi_override/` into the early uncompressed section of the initramfs,
+which the kernel reads first. That section exists in a classic initramfs as well as in a
+UKI, so a separate `initrd=` entry is not needed in either case.
 
 ```
 # /etc/mkinitcpio.conf: add acpi_override to the existing HOOKS line (after microcode)
 # The line below is the CachyOS default example; keep your other hooks as they are
 HOOKS=(base systemd autodetect microcode acpi_override kms modconf block keyboard sd-vconsole plymouth filesystems)
 
-sudo mkinitcpio -P          # classic initramfs
-sudo limine-update          # UKI on Limine
+sudo mkinitcpio -P          # rebuild the classic initramfs
 ```
+
+Systems that build a UKI do it through the same tool: on CachyOS,
+`limine-mkinitcpio-hook` calls mkinitcpio, the hook output is included automatically,
+and the rebuild command is `sudo limine-update`. Distributions that generate their UKI
+through a comparable hook behave the same way.
 
 If the directory is empty, the hook stops the build with `No ACPI table override files
 found`: an empty directory means the patch would not be loaded on that boot.

@@ -74,37 +74,37 @@ ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI（统一内核镜像）"
 
 ## 第二步：生成覆盖表
 
-在目标机器上生成覆盖表，仅覆盖 `ssdt-cpmgpio0`：
+在目标机器上生成覆盖表，仅覆盖 `ssdt-cpmgpio0`。生成命令按 initramfs 工具选择：
 
-```
-sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio
-```
+| initramfs 工具 | 生成命令 | 加载方式 |
+|---|---|---|
+| mkinitcpio（Arch、CachyOS 等） | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | 见 2a |
+| dracut 及其他 | `sudo ./rebuild_patch.sh --minimal` | 见 2b |
 
 脚本从运行中的固件读取表，将 `_AEI` 中引脚 `0x0018` 的 `ExclusiveAndWake` 改为
 `Exclusive`，并将编译结果复制到 `/etc/initcpio/acpi_override/`。脚本同时检查当前是否
 已加载覆盖表，否则 dump 得到的是修改后的表，而非固件原始表。
 
-该命令写入的是 mkinitcpio 钩子所需的文件，不生成 cpio。使用 dracut 或需要单独 cpio
-的引导器时，改用 `sudo ./rebuild_patch.sh --minimal`（不带 `--no-cpio`），输出中会包含
-`acpi_override.cpio`。
+mkinitcpio 路径不生成 cpio，表由钩子直接放入 initramfs；dracut 等工具没有对应钩子，
+其命令会在仓库目录下生成 `acpi_override.cpio`。
 
 ### 2a. mkinitcpio（Arch、CachyOS 及其衍生版）
 
 mkinitcpio 提供 `acpi_override` 钩子，将 `/etc/initcpio/acpi_override/` 下的 `*.aml`
-放入内核最先读取的那段 initramfs。
-
-UKI 由同一套工具生成：CachyOS 上由 `limine-mkinitcpio-hook` 调用 mkinitcpio，
-钩子的输出会自动包含在镜像中。通过同类钩子生成 UKI 的其他
-发行版，行为与此一致。
+放入 initramfs 开头的未压缩段，内核最先读取这一段。传统 initramfs 与 UKI 都包含这一段，
+两种形态都不需要单独的 `initrd=` 条目。
 
 ```
 # /etc/mkinitcpio.conf：在现有 HOOKS 行中加入 acpi_override（建议放在 microcode 之后）
 # 下面为 CachyOS 默认示例，其余钩子保留你自己的配置
 HOOKS=(base systemd autodetect microcode acpi_override kms modconf block keyboard sd-vconsole plymouth filesystems)
 
-sudo mkinitcpio -P          # 传统 initramfs
-sudo limine-update          # Limine 下的 UKI
+sudo mkinitcpio -P          # 重建传统 initramfs
 ```
+
+使用 UKI 的发行版同样由 mkinitcpio 构建：CachyOS 上经由 `limine-mkinitcpio-hook` 调用
+mkinitcpio，钩子的输出会自动包含在镜像中，重建命令为 `sudo limine-update`。通过同类钩子
+生成 UKI 的其他发行版，行为与此一致。
 
 目录为空时，钩子会以 `No ACPI table override files found` 停止构建：空目录意味着启动
 时不会加载补丁。

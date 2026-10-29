@@ -86,38 +86,40 @@ ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI (unified kernel image)"
 ## Шаг 2 — сборка переопределяющей таблицы
 
 Соберите переопределяющую таблицу на целевой машине; переопределяется только
-`ssdt-cpmgpio0`:
+`ssdt-cpmgpio0`. Команда зависит от генератора initramfs:
 
-```
-sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio
-```
+| Генератор initramfs | Команда | Загрузка |
+|---|---|---|
+| mkinitcpio (Arch, CachyOS, ...) | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | шаг 2a |
+| dracut и другие | `sudo ./rebuild_patch.sh --minimal` | шаг 2b |
 
 Скрипт читает таблицы из работающей прошивки, заменяет `ExclusiveAndWake` на
 `Exclusive` для вывода `0x0018` в `_AEI` и копирует результат компиляции в
 `/etc/initcpio/acpi_override/`. Он также проверяет, не загружено ли сейчас
 переопределение: иначе в дамп попадёт изменённая таблица вместо заводской.
 
-Эта команда создаёт файлы для хука mkinitcpio и не собирает cpio. Для dracut или для
-загрузчика, которому нужен отдельный cpio, используйте `sudo ./rebuild_patch.sh --minimal`
-(без `--no-cpio`); в выводе появится `acpi_override.cpio`.
+Путь mkinitcpio не собирает cpio — таблицы встраивает хук. У dracut такого хука нет,
+поэтому команда создаёт `acpi_override.cpio` в каталоге репозитория.
 
 ### 2a. mkinitcpio (Arch, CachyOS и производные)
 
 В mkinitcpio есть хук `acpi_override`. Он помещает все `*.aml` из
-`/etc/initcpio/acpi_override/` в ту часть initramfs, которую ядро читает первой.
-
-UKI собирается тем же инструментом: в CachyOS это делает `limine-mkinitcpio-hook`, который
-вызывает mkinitcpio, и вывод хука попадает в образ автоматически. Дистрибутивы, которые
-собирают UKI через аналогичный хук, ведут себя так же.
+`/etc/initcpio/acpi_override/` в несжатое начало initramfs, которое ядро читает первым.
+Это начало есть и в обычном initramfs, и в UKI, поэтому отдельная строка `initrd=` не
+нужна ни в одном из случаев.
 
 ```
 # /etc/mkinitcpio.conf: добавьте acpi_override в существующую строку HOOKS (после microcode)
 # Строка ниже — пример по умолчанию в CachyOS; остальные хуки оставьте как есть
 HOOKS=(base systemd autodetect microcode acpi_override kms modconf block keyboard sd-vconsole plymouth filesystems)
 
-sudo mkinitcpio -P          # обычный initramfs
-sudo limine-update          # UKI под Limine
+sudo mkinitcpio -P          # пересобрать обычный initramfs
 ```
+
+Дистрибутивы с UKI собирают его тем же инструментом: в CachyOS это делает
+`limine-mkinitcpio-hook`, который вызывает mkinitcpio, вывод хука попадает в образ
+автоматически, команда пересборки — `sudo limine-update`. Дистрибутивы, которые собирают
+UKI через аналогичный хук, ведут себя так же.
 
 Если каталог пуст, хук останавливает сборку с сообщением `No ACPI table override files
 found`: пустой каталог означает, что на этой загрузке патч не будет загружен.
