@@ -84,12 +84,12 @@ After rebooting, `cat /proc/cmdline` must contain `acpi.ec_no_wakeup=1`.
 ## Step 2 — building the override table
 
 Generate the override table on the target machine; only `ssdt-cpmgpio0` is overridden.
-The command depends on the initramfs generator:
+There are two loading methods; the command depends on the chosen one:
 
-| initramfs generator | Command | Loading |
+| Loading method | Command | Applies to |
 |---|---|---|
-| mkinitcpio (Arch, CachyOS, ...) | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | step 2a |
-| dracut and others | `sudo ./rebuild_patch.sh --minimal` | step 2b |
+| hook (mkinitcpio) | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | mkinitcpio systems; classic initramfs and UKI, see 2a |
+| separate cpio | `sudo ./rebuild_patch.sh --minimal` | any bootloader and initramfs generator; the file is independent of the initramfs and survives kernel updates, see 2b |
 
 The script reads the tables from the running firmware, changes `ExclusiveAndWake` to
 `Exclusive` for pin `0x0018` in `_AEI`, and copies the compiled output to
@@ -101,7 +101,7 @@ The mkinitcpio path does not produce a cpio: the hook embeds the tables directly
 has no such hook, and its command generates `acpi_override.cpio` in the repository
 directory.
 
-### 2a. mkinitcpio (Arch, CachyOS, and derivatives)
+### 2a. mkinitcpio hook (classic initramfs and UKI)
 
 mkinitcpio provides a hook named `acpi_override`. It places every `*.aml` from
 `/etc/initcpio/acpi_override/` into the early uncompressed section of the initramfs,
@@ -125,11 +125,13 @@ If the directory is empty, the hook stops the build with `No ACPI table override
 found`: an empty directory means the patch would not be loaded on that boot.
 
 <details>
-<summary><b>2b. dracut and other initramfs generators (Fedora, openSUSE, ...)</b></summary>
+<summary><b>2b. separate cpio (dracut, or without the hook)</b></summary>
 
 
-dracut has no equivalent hook, so the table is loaded as a separate uncompressed cpio
-placed before the initrd. Build it with:
+dracut has no equivalent hook, and the same method is used when the tables should not be
+embedded in the initramfs: the table is loaded as a separate uncompressed cpio placed
+before the initrd. The file is independent of the initramfs and survives kernel updates.
+Build it with:
 
 ```
 sudo ./rebuild_patch.sh --minimal

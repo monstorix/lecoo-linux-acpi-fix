@@ -86,12 +86,12 @@ ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI (unified kernel image)"
 ## Шаг 2 — сборка переопределяющей таблицы
 
 Соберите переопределяющую таблицу на целевой машине; переопределяется только
-`ssdt-cpmgpio0`. Команда зависит от генератора initramfs:
+`ssdt-cpmgpio0`. Есть два способа загрузки; команда зависит от выбранного:
 
-| Генератор initramfs | Команда | Загрузка |
+| Способ загрузки | Команда | Применение |
 |---|---|---|
-| mkinitcpio (Arch, CachyOS, ...) | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | шаг 2a |
-| dracut и другие | `sudo ./rebuild_patch.sh --minimal` | шаг 2b |
+| хук (mkinitcpio) | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | системы с mkinitcpio; обычный initramfs и UKI, см. 2a |
+| отдельный cpio | `sudo ./rebuild_patch.sh --minimal` | любой загрузчик и генератор initramfs; файл не зависит от initramfs и переживает обновления ядра, см. 2b |
 
 Скрипт читает таблицы из работающей прошивки, заменяет `ExclusiveAndWake` на
 `Exclusive` для вывода `0x0018` в `_AEI` и копирует результат компиляции в
@@ -101,7 +101,7 @@ ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI (unified kernel image)"
 Путь mkinitcpio не собирает cpio — таблицы встраивает хук. У dracut такого хука нет,
 поэтому команда создаёт `acpi_override.cpio` в каталоге репозитория.
 
-### 2a. mkinitcpio (Arch, CachyOS и производные)
+### 2a. хук mkinitcpio (обычный initramfs и UKI)
 
 В mkinitcpio есть хук `acpi_override`. Он помещает все `*.aml` из
 `/etc/initcpio/acpi_override/` в несжатое начало initramfs, которое ядро читает первым.
@@ -125,11 +125,12 @@ UKI через аналогичный хук, ведут себя так же.
 found`: пустой каталог означает, что на этой загрузке патч не будет загружен.
 
 <details>
-<summary><b>2b. dracut и другие генераторы initramfs (Fedora, openSUSE и т.п.)</b></summary>
+<summary><b>2b. отдельный cpio (dracut или без хука)</b></summary>
 
 
-В dracut аналогичного хука нет, поэтому таблица загружается отдельным несжатым cpio
-перед initrd. Сборка:
+В dracut аналогичного хука нет; этот же способ используется, когда таблицы не должны
+встраиваться в initramfs. Таблица загружается отдельным несжатым cpio перед initrd; файл
+не зависит от initramfs и переживает обновления ядра. Сборка:
 
 ```
 sudo ./rebuild_patch.sh --minimal

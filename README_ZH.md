@@ -74,12 +74,13 @@ ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI（统一内核镜像）"
 
 ## 第二步：生成覆盖表
 
-在目标机器上生成覆盖表，仅覆盖 `ssdt-cpmgpio0`。生成命令按 initramfs 工具选择：
+在目标机器上生成覆盖表，仅覆盖 `ssdt-cpmgpio0`。覆盖表有两种加载方式，按自己的
+initramfs 工具与偏好选择：
 
-| initramfs 工具 | 生成命令 | 加载方式 |
+| 加载方式 | 生成命令 | 适用 |
 |---|---|---|
-| mkinitcpio（Arch、CachyOS 等） | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | 见 2a |
-| dracut 及其他 | `sudo ./rebuild_patch.sh --minimal` | 见 2b |
+| 钩子（mkinitcpio） | `sudo ./rebuild_patch.sh --minimal --install-acpi --no-cpio` | 使用 mkinitcpio 的系统；传统 initramfs 与 UKI 均可，见 2a |
+| 单独 cpio | `sudo ./rebuild_patch.sh --minimal` | 任意引导器与 initramfs 工具；文件与 initramfs 相互独立，内核更新后无需重新生成，见 2b |
 
 脚本从运行中的固件读取表，将 `_AEI` 中引脚 `0x0018` 的 `ExclusiveAndWake` 改为
 `Exclusive`，并将编译结果复制到 `/etc/initcpio/acpi_override/`。脚本同时检查当前是否
@@ -88,7 +89,7 @@ ls /boot/EFI/Linux/*.efi 2>/dev/null && echo "UKI（统一内核镜像）"
 mkinitcpio 路径不生成 cpio，表由钩子直接放入 initramfs；dracut 等工具没有对应钩子，
 其命令会在仓库目录下生成 `acpi_override.cpio`。
 
-### 2a. mkinitcpio（Arch、CachyOS 及其衍生版）
+### 2a. mkinitcpio 钩子（传统 initramfs 与 UKI）
 
 mkinitcpio 提供 `acpi_override` 钩子，将 `/etc/initcpio/acpi_override/` 下的 `*.aml`
 放入 initramfs 开头的未压缩段，内核最先读取这一段。传统 initramfs 与 UKI 都包含这一段，
@@ -110,10 +111,11 @@ mkinitcpio，钩子的输出会自动包含在镜像中，重建命令为 `sudo 
 时不会加载补丁。
 
 <details>
-<summary><b>2b. dracut 与其他 initramfs 工具（Fedora、openSUSE 等使用 dracut 的发行版）</b></summary>
+<summary><b>2b. 单独 cpio（dracut，或不使用钩子的场合）</b></summary>
 
 
-dracut 没有对应的钩子，表以单独的非压缩 cpio 形式加载，并排在 initrd 之前。生成方式：
+dracut 没有对应的钩子；不想把表嵌入 initramfs 时也使用这种方式。表以单独的非压缩 cpio
+形式加载，并排在 initrd 之前，文件与 initramfs 相互独立，内核更新后无需重新生成。生成方式：
 
 ```
 sudo ./rebuild_patch.sh --minimal
