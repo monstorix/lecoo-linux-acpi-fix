@@ -1,0 +1,16 @@
+[Unit]
+Description=Lecoo 2.5: record the shutdown marker before S5
+Documentation=file:///usr/local/sbin/lecoo-acpi-log
+# 与 lecoo-nic-unbind 同一套钩子模式：启动期空操作，停止本单元时写一条关机记录。
+DefaultDependencies=no
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/sbin/lecoo-acpi-log shutdown
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

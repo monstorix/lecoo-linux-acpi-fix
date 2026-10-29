@@ -1,24 +1,24 @@
 /*
  * Intel ACPI Component Architecture
- * AML/ASL+ Disassembler version 20250404 (64-bit version)
+ * AML/ASL+ Disassembler version 20251212 (64-bit version)
  * Copyright (c) 2000 - 2025 Intel Corporation
  * 
  * Disassembling to symbolic ASL+ operators
  *
- * Disassembly of ssdt22.dat
+ * Disassembly of ssdt-cpmgpio0.dat
  *
  * Original Table Header:
  *     Signature        "SSDT"
- *     Length           0x00000C9C (3228)
+ *     Length           0x00000D29 (3369)
  *     Revision         0x02
- *     Checksum         0xC9
+ *     Checksum         0x64
  *     OEM ID           "AMD"
  *     OEM Table ID     "CPMGPIO0"
  *     OEM Revision     0x00000001 (1)
  *     Compiler ID      "INTL"
  *     Compiler Version 0x20220331 (539099953)
  */
-DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
+DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000002)
 {
     /*
      * iASL Warning: There were 3 external control methods found during
@@ -65,7 +65,6 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
     External (_SB_.PCI0.SBRG.H_EC.BAT0, UnknownObj)
     External (_SB_.PCI0.SBRG.H_EC.OKEC, IntObj)
     External (_SB_.PWRB, DeviceObj)
-    External (\SLPF, IntObj)
     External (CMSR, IntObj)
     External (CMSW, MethodObj)    // Warning: Unknown method, guessing 3 arguments
     External (M000, MethodObj)    // 1 Arguments
@@ -210,16 +209,11 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
 
     Scope (\_SB.GPIO)
     {
+        Name (APBM, 0x01)
         Method (_AEI, 0, NotSerialized)  // _AEI: ACPI Event Interrupts
         {
             Name (BUF0, ResourceTemplate ()
             {
-                GpioInt (Edge, ActiveHigh, ExclusiveAndWake, PullDefault, 0x1388, // power button?
-                    "\\_SB.GPIO", 0x00, ResourceConsumer, ,
-                    )
-                    {   // Pin list
-                        0x0000
-                    }
                 GpioInt (Level, ActiveHigh, Exclusive, PullNone, 0x0000,
                     "\\_SB.GPIO", 0x00, ResourceConsumer, ,
                     )
@@ -244,7 +238,7 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                     {   // Pin list
                         0x003B
                     }
-                GpioInt (Edge, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
+                GpioInt (Edge, ActiveLow, Exclusive, PullNone, 0x0000,
                     "\\_SB.GPIO", 0x00, ResourceConsumer, ,
                     )
                     {   // Pin list
@@ -255,6 +249,15 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                     )
                     {   // Pin list
                         0x000B
+                    }
+            })
+            Name (PBTN, ResourceTemplate ()
+            {
+                GpioInt (Edge, ActiveHigh, ExclusiveAndWake, PullDefault, 0x1388,
+                    "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                    )
+                    {   // Pin list
+                        0x0000
                     }
             })
             Name (BUF1, Buffer (0x02)
@@ -272,8 +275,16 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                 Local0 = BUF0 /* \_SB_.GPIO._AEI.BUF0 */
             }
 
+            M460 ("  OEM-ASL-Copy Local0 to Local1\n", Zero, Zero, Zero, Zero, Zero, Zero)
+            Local1 = Local0
+            If ((APBM == One))
+            {
+                M460 ("  OEM-ASL-Concatenate Local0 and PBTN to Local1\n", Zero, Zero, Zero, Zero, Zero, Zero)
+                ConcatenateResTemplate (Local0, PBTN, Local1)
+            }
+
             M460 ("  OEM-ASL-\\_SB.GPIO._AEI\n", Zero, Zero, Zero, Zero, Zero, Zero)
-            Return (Local0)
+            Return (Local1)
         }
 
         Method (_EVT, 1, Serialized)  // _EVT: Event
@@ -289,7 +300,6 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                     {
                         Store (CMSR, Local1)
                         Add (Local1, 0x04, Local1)
-
                         CMSW (0x56, Local1, M460 ("    Notify (\\_SB.PCI0.SBRG.H_EC.BAT0)\n", Zero, Zero, Zero, Zero, Zero, Zero))
                         \_SB.PCI0.SBRG.H_EC.B1PN = Zero
                         Notify (\_SB.PCI0.SBRG.H_EC.BAT0, 0x80) // Status Change
@@ -297,20 +307,10 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                     }
                     Else
                     {
-
-                        If (LEqual (\SLPF, Zero)) 
-                        {
-                            Debug = "*** DBG_S2I: not in sleep state, so do some job, whatever ***"
-                            Store (CMSR, Local1)
-                            Add (Local1, 0x02, Local1)
-                            CMSW (0x56, Local1, M460 ("    Notify (\\_SB.PWRB, 0x80)\n", Zero, Zero, Zero, Zero, Zero, Zero))
-                            Notify (\_SB.PWRB, 0x80) // Status Change
-                        }
-                        Else
-                        {
-                            // we are sleeping!
-                            Debug = "*** DBG_S2I: BLOCKED FAKE PWRB DURING SLEEP! ***"
-                        }
+                        Store (CMSR, Local1)
+                        Add (Local1, 0x02, Local1)
+                        CMSW (0x56, Local1, M460 ("    Notify (\\_SB.PWRB, 0x80)\n", Zero, Zero, Zero, Zero, Zero, Zero))
+                        Notify (\_SB.PWRB, 0x80) // Status Change
                     }
                 }
                 Case (0x02)
@@ -335,8 +335,6 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                     M460 ("    Notify (\\_SB.PCI0.GPP5.DEV0, 0x01)\n", Zero, Zero, Zero, Zero, Zero, Zero)
                     Notify (\_SB.PCI0.GPP5.DEV0, One) // Device Check
                 }
-
-                // AC adapter probably
                 Case (0x0B)
                 {
                     M000 (0x390B)
@@ -366,8 +364,6 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                 {
                     M000 (0x3936)
                 }
-
-                // USB devices?
                 Case (0x3A)
                 {
                     M000 (0x393A)
@@ -380,7 +376,6 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
                     M460 ("    Notify (\\_SB.PCI0.GP17.XHC1, 0x02)\n", Zero, Zero, Zero, Zero, Zero, Zero)
                     Notify (\_SB.PCI0.GP17.XHC1, 0x02) // Device Wake
                 }
-
                 Case (0x3D)
                 {
                     M000 (0x393D)

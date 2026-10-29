@@ -1,6 +1,6 @@
 /*
  * Intel ACPI Component Architecture
- * AML/ASL+ Disassembler version 20250404 (64-bit version)
+ * AML/ASL+ Disassembler version 20251212 (64-bit version)
  * Copyright (c) 2000 - 2025 Intel Corporation
  * 
  * Disassembling to symbolic ASL+ operators
@@ -9,18 +9,44 @@
  *
  * Original Table Header:
  *     Signature        "DSDT"
- *     Length           0x0000CBEC (52204)
+ *     Length           0x0000D1ED (53741)
  *     Revision         0x02
- *     Checksum         0xA8
+ *     Checksum         0x31
  *     OEM ID           "ALASKA"
  *     OEM Table ID     "A M I "
- *     OEM Revision     0x0107200A (17244170)
+ *     OEM Revision     0x01072009 (17244169)
  *     Compiler ID      "INTL"
- *     Compiler Version 0x20250404 (539296772)
+ *     Compiler Version 0x20220331 (539099953)
  */
 DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
 {
-    External (_GPE, DeviceObj)
+    /*
+     * iASL Warning: There were 21 external control methods found during
+     * disassembly, but only 19 were resolved (2 unresolved). Additional
+     * ACPI tables may be required to properly disassemble the code. This
+     * resulting disassembler output file may not compile because the
+     * disassembler did not know how many arguments to assign to the
+     * unresolved methods. Note: SSDTs can be dynamically loaded at
+     * runtime and may or may not be available via the host OS.
+     *
+     * To specify the tables needed to resolve external control method
+     * references, the -e option can be used to specify the filenames.
+     * Example iASL invocations:
+     *     iasl -e ssdt1.aml ssdt2.aml ssdt3.aml -d dsdt.aml
+     *     iasl -e dsdt.aml ssdt2.aml -d ssdt1.aml
+     *     iasl -e ssdt*.aml -d dsdt.aml
+     *
+     * In addition, the -fe option can be used to specify a file containing
+     * control method external declarations with the associated method
+     * argument counts. Each line of the file must be of the form:
+     *     External (<method pathname>, MethodObj, <argument count>)
+     * Invocation:
+     *     iasl -fe refs.txt -d dsdt.aml
+     *
+     * The following methods were unresolved and many not compile properly
+     * because the disassembler had to guess at the number of arguments
+     * required for each:
+     */
     External (_SB_.ALIB, MethodObj)    // 2 Arguments
     External (_SB_.APTS, MethodObj)    // 1 Arguments
     External (_SB_.AWAK, MethodObj)    // 1 Arguments
@@ -40,11 +66,13 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     External (_SB_.PCI0.SBRG.H_EC.XXTT, UnknownObj)
     External (_SB_.PMF_, DeviceObj)
     External (_SB_.PRME, IntObj)
+    External (_SB_.PWRB, DeviceObj)
     External (_SB_.WMI_, UnknownObj)
     External (_SB_.WMI_.EVNT, UnknownObj)
     External (_SB_.WMI_.QEKE, MethodObj)    // 0 Arguments
     External (AFN4, MethodObj)    // 1 Arguments
     External (ALIB, MethodObj)    // 2 Arguments
+    External (APMB, IntObj)
     External (CRBI, UnknownObj)
     External (D0DE, UnknownObj)
     External (M000, MethodObj)    // 1 Arguments
@@ -192,6 +220,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     External (PRME, IntObj)
 
     Name (SLPF, Zero) // Sleep Flag (0 - awaking, 1 - sleeping)
+
     Name (PEBL, 0x10000000)
     Name (NBTS, 0x5000)
     Name (CPVD, One)
@@ -232,20 +261,20 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     Name (TMF1, Zero)
     Name (TMF2, Zero)
     Name (TMF3, Zero)
-    Name (TTPF, One)
+    Name (TTPF, Zero)
     Name (DTPT, Zero)
-    Name (TTDP, Zero)
-    Name (TPMB, 0xFFFFFFFF)
-    Name (TPBS, 0x1000)
-    Name (TPMC, 0xFFFFFFFF)
-    Name (TPCS, 0x1000)
-    Name (TPMM, 0xFED40000)
-    Name (FTPM, 0xFFFFFFFF)
-    Name (PPIM, 0x97479F18)
+    Name (TTDP, One)
+    Name (TPMB, 0x94697000)
+    Name (TPBS, 0x4000)
+    Name (TPMC, 0x9469B000)
+    Name (TPCS, 0x4000)
+    Name (TPMM, 0xFD310510)
+    Name (FTPM, 0xFD310510)
+    Name (PPIM, 0x951B6F18)
     Name (PPIL, 0x1C)
-    Name (TPMF, Zero)
-    Name (PPIV, Zero)
-    Name (AMDT, 0xFF)
+    Name (TPMF, One)
+    Name (PPIV, One)
+    Name (AMDT, 0x01)
     Name (MBEC, Zero)
     Name (NBTP, 0xFEC00000)
     Name (PEER, Zero)
@@ -502,10 +531,10 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     Name (SS3, One)
     Name (SS4, One)
     Name (IOST, 0xFFFF)
-    Name (TOPM, Zero)
+    Name (TOPM, 0x00000000)
     Name (ROMS, 0xFFE00000)
     Name (VGAF, One)
-    OperationRegion (GNVS, SystemMemory, 0x971F2F18, 0x0D)
+    OperationRegion (GNVS, SystemMemory, 0x951A3D18, 0x0D)
     Field (GNVS, AnyAcc, Lock, Preserve)
     {
         CNSB,   8, 
@@ -685,12 +714,18 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
 
         If ((Arg0 == 0x03))
         {
-            Notify (\_SB.PWRB, 0x02) // Device Wake
+            If ((\_SB.APBM == One))
+            {
+                Notify (\_SB.PWRB, 0x02) // Device Wake
+            }
         }
 
         If ((Arg0 == 0x04))
         {
-            Notify (\_SB.PWRB, 0x02) // Device Wake
+            If ((\_SB.APBM == One))
+            {
+                Notify (\_SB.PWRB, 0x02) // Device Wake
+            }
         }
     }
 
@@ -698,7 +733,82 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     {
     }
 
-    OperationRegion (OGNV, SystemMemory, 0x97479698, 0x0334)
+    Scope (_SB)
+    {
+        Name (APBM, One)
+        Device (PWRB)
+        {
+            Name (_HID, EisaId ("PNP0C0C") /* Power Button Device */)  // _HID: Hardware ID
+            Name (_DDN, "Power button")  // _DDN: DOS Device Name
+            Method (_STA, 0, NotSerialized)  // _STA: Status
+            {
+                Name (PSTA, Zero)
+                If ((APBM == One))
+                {
+                    PSTA = 0x0B
+                }
+
+                Return (PSTA) /* \_SB_.PWRB._STA.PSTA */
+            }
+        }
+
+        Device (BTNS)
+        {
+            Name (_HID, "ACPI0011" /* Generic Buttons Device */)  // _HID: Hardware ID
+            Name (_DDN, "Generic buttons device")  // _DDN: DOS Device Name
+            Method (_CRS, 0, NotSerialized)  // _CRS: Current Resource Settings
+            {
+                Name (RBUF, ResourceTemplate ()
+                {
+                    GpioInt (Edge, ActiveBoth, ExclusiveAndWake, PullUp, 0x0000,
+                        "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                        )
+                        {   // Pin list
+                            0x0000
+                        }
+                })
+                Return (RBUF) /* \_SB_.BTNS._CRS.RBUF */
+            }
+
+            Method (_STA, 0, NotSerialized)  // _STA: Status
+            {
+                Name (PSTA, Zero)
+                If ((APBM == Zero))
+                {
+                    PSTA = 0x0B
+                }
+
+                Return (PSTA) /* \_SB_.BTNS._STA.PSTA */
+            }
+
+            Name (_DSD, Package (0x02)  // _DSD: Device-Specific Data
+            {
+                ToUUID ("fa6bd625-9ce8-470d-a2c7-b3ca36c4282e") /* Generic Buttons Device */, 
+                Package (0x02)
+                {
+                    Package (0x05)
+                    {
+                        Zero, 
+                        One, 
+                        Zero, 
+                        One, 
+                        0x0D
+                    }, 
+
+                    Package (0x05)
+                    {
+                        One, 
+                        Zero, 
+                        One, 
+                        One, 
+                        0x81
+                    }
+                }
+            })
+        }
+    }
+
+    OperationRegion (OGNV, SystemMemory, 0x951B6698, 0x0334)
     Field (OGNV, AnyAcc, Lock, Preserve)
     {
         WOLV,   8, 
@@ -2265,9 +2375,9 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
             }
 
             Name (CPRB, One)
-            Name (LVGA, One)
+            Name (LVGA, 0x01)
             Name (STAV, 0x0F)
-            Name (BRB, Zero)
+            Name (BRB, 0x0000)
             Name (BRL, 0x0100)
             Name (IOB, 0x1000)
             Name (IOL, 0xF000)
@@ -2276,7 +2386,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
             Name (MAB, 0x0000000860000000)
             Name (MAL, 0x00000077A0000000)
             Name (MAM, 0x0000007FFFFFFFFF)
-            Name (NRSB, 0x97467000)
+            Name (NRSB, 0x951A4000)
             OperationRegion (NRSV, SystemMemory, NRSB, 0x1000)
             Field (NRSV, AnyAcc, NoLock, Preserve)
             {
@@ -2905,7 +3015,6 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                 {
                     Name (_ADR, 0xFF)  // _ADR: Address
                 }
-
                 Device (WWAN)
                 {
                     Name (_ADR, Zero)
@@ -3782,18 +3891,15 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
         Method (_L16, 0, NotSerialized)  // _Lxx: Level-Triggered GPE, xx=0x00-0xFF
         {
             Notify (\_SB.PCI0.GPP0, 0x02) // Device Wake
-            Notify (\_SB.PWRB, 0x02) // Device Wake
+            If ((\_SB.APBM == One))
+            {
+                Notify (\_SB.PWRB, 0x02) // Device Wake
+            }
         }
     }
 
     Scope (_SB)
     {
-        Device (PWRB)
-        {
-            Name (_HID, EisaId ("PNP0C0C") /* Power Button Device */)  // _HID: Hardware ID
-            Name (_UID, 0xAA)  // _UID: Unique ID
-            Name (_STA, 0x0B)  // _STA: Status
-        }
     }
 
     Name (_S0, Package (0x04)  // _S0_: S0 System State
@@ -3803,7 +3909,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
         Zero, 
         Zero
     })
-    Name (_S3, Package (0x04)
+    Name (_S3, Package (0x04)  // _S3_: S3 System State
     {
         0x03, 
         Zero, 
@@ -3826,11 +3932,11 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     })
     Method (_PTS, 1, NotSerialized)  // _PTS: Prepare To Sleep
     {
-        If ((Arg0 == Zero)) { // todo: use only for s2idle? idk for now, actually
+        If ((Arg0 == Zero)) { // s2idle: mark sleeping
             Store (One, \SLPF)
         }
 
-        If ((Arg0 < 0x05))
+        If (Arg0)
         {
             \_SB.TPM.TPTS (Arg0)
             SPTS (Arg0)
@@ -3842,7 +3948,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
     Method (_WAK, 1, NotSerialized)  // _WAK: Wake
     {
         Debug = "*** not DBG_S2I: waking ***"
-        Store (Zero, \SLPF) 
+        Store (Zero, \SLPF)
         DBG8 = (Arg0 << 0x04)
         \_SB.PCI0.NWAK (Arg0)
         If (((Arg0 == 0x03) || (Arg0 == 0x04)))
@@ -7249,9 +7355,6 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                 Offset (0x32), 
                 TLID,   8, 
                 TLIE,   8, 
-                // Offset (0x34),
-                // SCEN,   8,
-                // SCUC,   8,
                 Offset (0x38), 
                 RTSC,   8, 
                 Offset (0x40), 
@@ -8388,7 +8491,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                     "Li-ion Real Battery", 
                     "123456789", 
                     "Lion", 
-                    "AMD Battery"
+                    "GanFeng"
                 })
                 BPK1 [One] = ((B1DC * B1FV) / 0x03E8)
                 BPK1 [0x02] = ((B1DC * B1FV) / 0x03E8)
@@ -9089,9 +9192,9 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                 {
                     Case (One)
                     {
-                        CMSW (0x9F, 0xA0)
+                        CMSW (0x9F, 0x55)
                         Sleep (0x14)
-                        If ((CMSR (0x9F) == 0xA0))
+                        If ((CMSR (0x9F) == 0x55))
                         {
                             RTNC = Zero
                         }
@@ -9924,7 +10027,8 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                 M020 (NBRI, Zero, Zero, (Local1 + 0x10), (PXLC & 0xFFFFFEFC))
                 M020 (NBRI, Zero, Zero, (Local1 + 0x28), PXD2)
                 M020 (NBRI, Zero, Zero, 0x10, NBAR)
-                M020 (NBRI, Zero, Zero, 0x04, 0x06)
+                Local2 = (NCMD & 0xFFFFFBFF)
+                M020 (NBRI, Zero, Zero, 0x04, (Local2 | 0x06))
             }
             Else
             {
@@ -9934,7 +10038,8 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                 M020 (BRI2, Zero, Zero, (Local1 + 0x10), (XLC2 & 0xFFFFFEFC))
                 M020 (BRI2, Zero, Zero, (Local1 + 0x28), XD22)
                 M020 (BRI2, Zero, Zero, 0x10, BAR2)
-                M020 (BRI2, Zero, Zero, 0x04, 0x06)
+                Local2 = (CMD2 & 0xFFFFFBFF)
+                M020 (BRI2, Zero, Zero, 0x04, (Local2 | 0x06))
             }
         }
 
@@ -11716,7 +11821,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                         AddressingMode7Bit, "\\_SB.I2CB",
                         0x00, ResourceConsumer, , Exclusive,
                         )
-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
+                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
                         )
                         {   // Pin list
@@ -11766,7 +11871,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                         AddressingMode7Bit, "\\_SB.I2CC",
                         0x00, ResourceConsumer, , Exclusive,
                         )
-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
+                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
                         )
                         {   // Pin list
@@ -11816,7 +11921,7 @@ DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
                         AddressingMode7Bit, "\\_SB.I2CD",
                         0x00, ResourceConsumer, , Exclusive,
                         )
-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
+                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
                         )
                         {   // Pin list

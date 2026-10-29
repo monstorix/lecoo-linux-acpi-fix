@@ -1,0 +1,263 @@
+--- test/dsdt.dsl	2026-10-14 20:04:21.214770886 +0800
++++ patched/dsdt.dsl	2026-10-24 19:47:03.939543176 +0800
+@@ -18,7 +18,7 @@
+  *     Compiler ID      "INTL"
+  *     Compiler Version 0x20220331 (539099953)
+  */
+-DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x01072009)
++DefinitionBlock ("", "DSDT", 2, "ALASKA", "A M I ", 0x0107201A)
+ {
+     /*
+      * iASL Warning: There were 21 external control methods found during
+@@ -47,7 +47,7 @@
+      * because the disassembler had to guess at the number of arguments
+      * required for each:
+      */
+-    External (_SB_.ALIB, MethodObj)    // Warning: Unknown method, guessing 2 arguments
++    External (_SB_.ALIB, MethodObj)    // 2 Arguments
+     External (_SB_.APTS, MethodObj)    // 1 Arguments
+     External (_SB_.AWAK, MethodObj)    // 1 Arguments
+     External (_SB_.PCI0.GP17.VGA_.AFN7, MethodObj)    // 1 Arguments
+@@ -69,7 +69,7 @@
+     External (_SB_.PWRB, DeviceObj)
+     External (_SB_.WMI_, UnknownObj)
+     External (_SB_.WMI_.EVNT, UnknownObj)
+-    External (_SB_.WMI_.QEKE, MethodObj)    // Warning: Unknown method, guessing 0 arguments
++    External (_SB_.WMI_.QEKE, MethodObj)    // 0 Arguments
+     External (AFN4, MethodObj)    // 1 Arguments
+     External (ALIB, MethodObj)    // 2 Arguments
+     External (APMB, IntObj)
+@@ -219,6 +219,8 @@
+     External (MWAK, MethodObj)    // 1 Arguments
+     External (PRME, IntObj)
+ 
++    Name (SLPF, Zero) // Sleep Flag (0 - awaking, 1 - sleeping)
++
+     Name (PEBL, 0x10000000)
+     Name (NBTS, 0x5000)
+     Name (CPVD, One)
+@@ -526,7 +528,7 @@
+ 
+     Name (SS1, Zero)
+     Name (SS2, Zero)
+-    Name (SS3, Zero)
++    Name (SS3, One)
+     Name (SS4, One)
+     Name (IOST, 0xFFFF)
+     Name (TOPM, 0x00000000)
+@@ -3013,6 +3015,10 @@
+                 {
+                     Name (_ADR, 0xFF)  // _ADR: Address
+                 }
++                Device (WWAN)
++                {
++                    Name (_ADR, Zero)
++                }
+             }
+ 
+             Device (GPP8)
+@@ -3859,7 +3865,7 @@
+                 Name (_ADR, 0x00010001)  // _ADR: Address
+                 Method (_PRW, 0, NotSerialized)  // _PRW: Power Resources for Wake
+                 {
+-                    Return (GPRW (0x16, 0x04))
++                    Return (GPRW (0x16, 0x00))
+                 }
+ 
+                 Method (_PRT, 0, NotSerialized)  // _PRT: PCI Routing Table
+@@ -3903,7 +3909,7 @@
+         Zero, 
+         Zero
+     })
+-    Name (XS3, Package (0x04)
++    Name (_S3, Package (0x04)
+     {
+         0x03, 
+         Zero, 
+@@ -3926,6 +3932,10 @@
+     })
+     Method (_PTS, 1, NotSerialized)  // _PTS: Prepare To Sleep
+     {
++        If ((Arg0 == Zero)) { // s2idle: mark sleeping
++            Store (One, \SLPF)
++        }
++
+         If (Arg0)
+         {
+             \_SB.TPM.TPTS (Arg0)
+@@ -3937,6 +3947,8 @@
+ 
+     Method (_WAK, 1, NotSerialized)  // _WAK: Wake
+     {
++        Debug = "*** not DBG_S2I: waking ***"
++        Store (Zero, \SLPF)
+         DBG8 = (Arg0 << 0x04)
+         \_SB.PCI0.NWAK (Arg0)
+         If (((Arg0 == 0x03) || (Arg0 == 0x04)))
+@@ -6780,7 +6792,7 @@
+                 0xFED40000,         // Address Base
+                 0x00005000,         // Address Length
+                 )
+-            GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
++            GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
+                 "\\_SB.GPIO", 0x00, ResourceConsumer, _Y2A,
+                 )
+                 {   // Pin list
+@@ -9102,7 +9114,7 @@
+             Method (WMAA, 3, Serialized)
+             {
+                 Debug = "WMI WMAA() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateWordField (Local0, 0x02, ALID)
+                 CreateField (Local0, 0x20, 0x3F, RES3)
+@@ -9171,7 +9183,7 @@
+             Method (WMAC, 3, Serialized)
+             {
+                 Debug = "WMI WMAC() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateWordField (Local0, 0x02, ALID)
+                 CreateField (Local0, 0x20, 0x3F, RES3)
+@@ -9202,7 +9214,7 @@
+             Method (WMAD, 3, Serialized)
+             {
+                 Debug = "WMI WMAD() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateByteField (Local0, 0x02, ECVN)
+                 CreateByteField (Local0, 0x03, ECVM)
+@@ -9264,7 +9276,7 @@
+             Method (WMAE, 3, Serialized)
+             {
+                 Debug = "WMI WMAE() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateByteField (Local0, 0x02, ECVN)
+                 CreateByteField (Local0, 0x03, ECVM)
+@@ -9385,7 +9397,7 @@
+             Method (WMAF, 3, Serialized)
+             {
+                 Debug = "WMI WMAF() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateByteField (Local0, 0x02, ECVN)
+                 CreateByteField (Local0, 0x03, ECVM)
+@@ -9474,7 +9486,7 @@
+             Method (WMBA, 3, Serialized)
+             {
+                 Debug = "WMI WMBA() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateByteField (Local0, 0x02, ECVN)
+                 CreateByteField (Local0, 0x03, ECVM)
+@@ -9498,7 +9510,7 @@
+             Method (WMBB, 3, Serialized)
+             {
+                 Debug = "WMI WMBB() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateWordField (Local0, 0x02, ALID)
+                 CreateField (Local0, 0x20, 0x3F, RES3)
+@@ -9550,7 +9562,7 @@
+             Method (WMBC, 3, Serialized)
+             {
+                 Debug = "WMI WMBC() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateWordField (Local0, 0x02, SCEN)
+                 CreateWordField (Local0, 0x03, SCPC)
+@@ -9615,7 +9627,7 @@
+             Method (WMBD, 3, Serialized)
+             {
+                 Debug = "WMI WMBD() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateByteField (Local0, 0x02, ECVN)
+                 CreateByteField (Local0, 0x03, ECVM)
+@@ -9668,7 +9680,7 @@
+             Method (WMBE, 3, Serialized)
+             {
+                 Debug = "WMI WMBE() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateWordField (Local0, 0x02, ALID)
+                 CreateField (Local0, 0x20, 0x3F, RES3)
+@@ -9720,7 +9732,7 @@
+             Method (WMBF, 3, Serialized)
+             {
+                 Debug = "WMI WMBB() Method in Application ---"
+-                Local0 = Buffer (0x08){}
++                Local0 = Buffer (0x10){}
+                 CreateWordField (Local0, Zero, RTNC)
+                 CreateByteField (Local0, 0x02, ECVN)
+                 CreateByteField (Local0, 0x03, ECVM)
+@@ -11759,7 +11771,7 @@
+                         AddressingMode7Bit, "\\_SB.I2CA",
+                         0x00, ResourceConsumer, , Exclusive,
+                         )
+-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
++                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
+                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                         )
+                         {   // Pin list
+@@ -11809,7 +11821,7 @@
+                         AddressingMode7Bit, "\\_SB.I2CB",
+                         0x00, ResourceConsumer, , Exclusive,
+                         )
+-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
++                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
+                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                         )
+                         {   // Pin list
+@@ -11859,7 +11871,7 @@
+                         AddressingMode7Bit, "\\_SB.I2CC",
+                         0x00, ResourceConsumer, , Exclusive,
+                         )
+-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
++                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
+                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                         )
+                         {   // Pin list
+@@ -11909,7 +11921,7 @@
+                         AddressingMode7Bit, "\\_SB.I2CD",
+                         0x00, ResourceConsumer, , Exclusive,
+                         )
+-                    GpioInt (Level, ActiveLow, ExclusiveAndWake, PullNone, 0x0000,
++                    GpioInt (Level, ActiveLow, Exclusive, PullNone, 0x0000,
+                         "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                         )
+                         {   // Pin list
+@@ -11948,6 +11960,7 @@
+     Scope (_SB.PCI0.GPP0)
+     {
+         Name (_S0W, 0x04)  // _S0W: S0 Device Wake State
++        Name (D0DE, Zero)
+         Method (DEON, 0, NotSerialized)
+         {
+             \_SB.ALIB (0x13, 0x09)
+@@ -12215,5 +12228,13 @@
+             CMSW ((Arg0 + 0x03), Local0)
+         }
+     }
+-}
+ 
++    Scope (_SB)
++    {
++        Device (PTCH)
++        {
++            Name (_HID, "PTCH0001") // ACPI Patched Marker
++            Name (_STA, 0x0B)
++        }
++    }
++}

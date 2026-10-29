@@ -1,0 +1,16 @@
+#!/bin/sh
+# systemd sleep hook：挂起前后各记一条事件。
+# 安装位置：/usr/lib/systemd/system-sleep/50-lecoo-acpi-log（需 0755）
+# 调用约定：$1 = pre|post, $2 = suspend|hibernate|...
+
+TOOL=/usr/local/sbin/lecoo-acpi-log
+[ -x "$TOOL" ] || exit 0
+
+case "$1" in
+    pre)  "$TOOL" pre  "${2:-unknown}" ;;
+    post) "$TOOL" post "${2:-unknown}" ;;
+    *)    exit 0 ;;
+esac
+
+# 永远不要阻断挂起流程
+exit 0

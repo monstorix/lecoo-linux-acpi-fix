@@ -9,6 +9,28 @@
 - 修复 S4 睡眠状态（也就是休眠）下“瞬时唤醒”的问题。
 - 显著提高了 **s2idle** (Modern Standby) 睡眠状态的稳定性，通过拦截误报的电源键事件和限制 GPIO 唤醒来修复随机的“瞬间唤醒”(Instant Wake) 问题。
 
+> ### ⚠️ BIOS 2.5+（DSDT OEM Revision `0x01072009`）：请在本机重建后再用；S5 残留问题无论是否覆盖都存在
+>
+> 作者本机上，原厂 2.5 固件已自行处理了上述大部分问题：
+>
+> | 问题 | 原厂 2.5 实测状态（作者本机） |
+> |---|---|
+> | 关机变重启 | 约 18%（17 次中 3 次），属固件残余缺陷 |
+> | 解锁 S3 | `mem_sleep` 已提供 `[s2idle] deep` |
+> | WMI 缓冲区溢出 | 无 `AE_AML_BUFFER_LIMIT`/WMI 报错 |
+> | `ACPI ... device not found` | 0 次 |
+> | S4 即时唤醒 | 本机不使用休眠（仅 zram） |
+> | s2idle 即时唤醒 | 合盖 2 分 20 秒，无提前唤醒 |
+>
+> 此前"不要加载任何覆盖表"的结论已于 **2026-10-27 部分修正**（[issue #6](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/6)）：另一位 2.5 用户用 `rebuild_patch.sh` 基于**自己的 dump** 重建补丁——四张表全部生效、fTPM 正常、s2idle 完全修复——而偶发关机变重启依旧（带补丁约 50%；该机原厂基线未测）。此前"覆盖表本身把 18% 抬到 44%"的说法从未得到统计学支持（3/17 vs 11/25，单表实验 n=1），现已存疑。
+>
+> 2.5 上的实用建议：
+> - 绝不要直接使用其他机器上构建的 cpio——用 `rebuild_patch.sh` 基于自己的 dump 重建（外来 DRAM 地址会破坏 fTPM，见 issue #3）；
+> - 若你的机器存在 s2idle（或 Wi-Fi 电源时序）问题，重建后的补丁是合理的修复手段；
+> - 偶发关机变重启（约 20–50%）无论是否覆盖表都会出现，属固件层面问题，尚无任何单处补丁改动被证实与其相关。
+>
+> 逐项症状对照（查什么、先修什么）见 [`patches/bios-0x01072009/SYMPTOMS.md`](patches/bios-0x01072009/SYMPTOMS.md)。
+
 
 ### ⚠️ 重要
 
@@ -18,12 +40,24 @@
 
 - **安全启动：** 本补丁在安全启动环境下不一定能够开箱即用。根据引导加载器的不同，在安全启动环境下加载自定义 ACPI 设备表通常需要较为复杂的手动自签名及录入过程，有时还需要编辑关键分区的文件。因此，强烈推荐在禁用安全启动后再应用本补丁，以免因配置失误导致系统无法启动。你需要自行解决配置过程中遇到的问题或报错。
 
-- **TPM 2.0：** 本补丁可能会阻止 fTPM 被 Linux 内核驱动检测到（设备 `/dev/tpm0` 或 `/dev/tpmrm0` 会在 dmesg 输出中报告超时错误)。此问题会导致系统启动时额外等待 90 秒。当前唯一的解决办法是直接禁用 TPM 功能。如果你已经在使用 TPM 相关功能（例如自动解锁 LUKS 分区），则不推荐使用本补丁。如果你有更好的解决方案，欢迎提交 PR（参阅[问题 #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3)以了解更多信息）。
+- **TPM 2.0：** ~~本补丁可能会阻止 fTPM 被 Linux 内核驱动检测到~~ **已修复。** 此前问题的根因是：覆盖表（override DSDT）是一份静态快照，而固件本应在每次开机时把 TPM 设备的启用变量（`TPMF`、`TTDP`、`TPMB`、`FTPM`、`PPIM` 等）运行时补写进 DSDT，静态覆盖表导致这些值全部丢失（参阅[问题 #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3)）。现补丁已改为基于开启 fTPM 状态下的实机 DSDT dump（BIOS 2.5）重建，运行时回填的值已被固化进表内，`/dev/tpm0` 与 `/dev/tpmrm0` 可正常生成，不再有 90 秒的启动延迟。
+
+- **内存布局敏感性：** 重建后的表内固化了若干来自 dump 时快照的 DRAM 型 ACPI NVS 地址（`PPIM`、`OGNV`、`GNVS`、`NRSB`）。正常启动下它们保持稳定，但若更改内存相关的 BIOS 设置（如 UMA 帧缓冲大小）、更换内存或触发内存重训练、或更新 BIOS 后，这些地址可能漂移。若届时 TPM 或 WMI 出现异常，请重新 dump DSDT 并重建补丁（参见 `build_acpi.sh`）。
 
 ## 准备
 
 1. 从[发布文件](https://github.com/LaVashikk/lecoo-linux-acpi-fix/releases)中下载 **`acpi_override.cpio`** 。
 2. 将其复制到引导分区（通常是 `/boot`）。
+
+### 在自己的机器上重建补丁（BIOS 2.5+ 推荐）
+
+补丁表内固化了与固件构建相关的 DRAM 型 ACPI NVS 地址。若你的机器运行相同的 BIOS 版本（DSDT OEM Revision 为 `0x01072009`，即 BIOS 2.5），可以直接从实机 dump 重建整套补丁：
+
+```bash
+sudo ./rebuild_patch.sh        # dump + 打补丁 + 编译 + 打包 acpi_override.cpio
+```
+
+脚本会校验 BIOS 版本、fTPM 是否启用、当前启动是否加载了补丁，然后以与地址无关的方式应用全部结构性修复（每项改动的人工审查版 diff 见 `patches/bios-0x01072009/*.changes.diff`），最后编译并打包 `acpi_override.cpio`。若无 root 权限、想基于已有 dump 重建：`ACPI_DUMP_FILE=acpi.out ./rebuild_patch.sh`。
 
 ```bash
 sudo cp acpi_override.cpio /boot/

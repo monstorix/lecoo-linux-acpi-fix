@@ -1,0 +1,19 @@
+[Unit]
+Description=Lecoo 2.5: disable spurious s2idle wake sources (i8042 + GPP2)
+Documentation=file:///usr/local/sbin/lecoo-wake-guard.sh
+# 不要用 ConditionPathExists 限制本单元：i8042 的 sysfs 节点在某些内核/机型上
+# 可能不存在，而脚本对"路径不存在"本身就会 skip。一旦加了条件，整条单元会被
+# 跳过，连带 XHC*/NHI0 也不再关闭 —— 等于白跑。
+# 只依赖 sysinit，不干扰关机链路；不写 Before=shutdown.target
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lecoo-wake-guard.sh apply
+# 说明：刻意不设置 ExecStop。
+# 若在关机时恢复唤醒源，等于在 S5 之前重新武装它们，正是本实验要消除的行为。
+# 回退方式：systemctl disable --now 本服务后，手工执行 lecoo-wake-guard.sh restore
+
+[Install]
+WantedBy=multi-user.target

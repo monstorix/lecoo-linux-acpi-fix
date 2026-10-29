@@ -1,11 +1,11 @@
 /*
  * Intel ACPI Component Architecture
- * AML/ASL+ Disassembler version 20250404 (64-bit version)
+ * AML/ASL+ Disassembler version 20251212 (64-bit version)
  * Copyright (c) 2000 - 2025 Intel Corporation
  * 
  * Disassembling to symbolic ASL+ operators
  *
- * Disassembly of ssdt8.dat
+ * Disassembly of ssdt-wlan.dat
  *
  * Original Table Header:
  *     Signature        "SSDT"
@@ -18,7 +18,7 @@
  *     Compiler ID      "INTL"
  *     Compiler Version 0x20220331 (539099953)
  */
-DefinitionBlock ("", "SSDT", 1, "AMD", "WLAN", 0x00000001)
+DefinitionBlock ("", "SSDT", 1, "AMD", "WLAN", 0x00000002)
 {
     External (_SB_.ALIB, MethodObj)    // 2 Arguments
     External (_SB_.PCI0.GPP6, DeviceObj)

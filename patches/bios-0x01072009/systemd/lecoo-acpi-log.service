@@ -1,0 +1,13 @@
+[Unit]
+Description=Lecoo 2.5: record boot state for suspend/shutdown analysis
+Documentation=file:///usr/local/sbin/lecoo-acpi-log
+DefaultDependencies=no
+After=local-fs.target
+RequiresMountsFor=/var/log/lecoo-acpi
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lecoo-acpi-log boot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+TPM related:
+264:    Name (TTDP, One)
+265:    Name (TPMB, 0x94918000)
+270:    Name (FTPM, 0xFD310510)
+271:    Name (PPIM, 0x951B6F18)
+272:    Name (PPIL, 0x1C)
+273:    Name (TPMF, One)
+274:    Name (PPIV, One)
+275:    Name (AMDT, 0x01)
+
+DRAM base address - firstboot
+271:    Name (PPIM, 0x951B6F18)
+809:    OperationRegion (OGNV, SystemMemory, 0x951B6698, 0x0334)
+2387:            Name (NRSB, 0x951A4000)
+
+second boot
+271:    Name (PPIM, 0x951B6F18)
+809:    OperationRegion (OGNV, SystemMemory, 0x951B6698, 0x0334)
+2387:            Name (NRSB, 0x951A4000)

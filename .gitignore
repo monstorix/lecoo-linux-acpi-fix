@@ -3,5 +3,6 @@ msdm.dat
 *.asm
 *.aml
 kernel/
+ec-data/
 .DS_Store
 Thumbs.db

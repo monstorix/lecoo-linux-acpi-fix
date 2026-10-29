@@ -1,11 +1,11 @@
 /*
  * Intel ACPI Component Architecture
- * AML/ASL+ Disassembler version 20250404 (64-bit version)
+ * AML/ASL+ Disassembler version 20251212 (64-bit version)
  * Copyright (c) 2000 - 2025 Intel Corporation
  * 
  * Disassembling to symbolic ASL+ operators
  *
- * Disassembly of ssdt21.dat
+ * Disassembly of ssdt-intgpp01.dat
  *
  * Original Table Header:
  *     Signature        "SSDT"
@@ -18,7 +18,7 @@
  *     Compiler ID      "INTL"
  *     Compiler Version 0x20220331 (539099953)
  */
-DefinitionBlock ("", "SSDT", 2, "AMD", "INTGPP01", 0x00000001)
+DefinitionBlock ("", "SSDT", 2, "AMD", "INTGPP01", 0x00000002)
 {
     External (_ADR, IntObj)
     External (_SB_.PCI0.DADR, IntObj)
@@ -3096,7 +3096,7 @@ DefinitionBlock ("", "SSDT", 2, "AMD", "INTGPP01", 0x00000001)
     {
         Method (CK17, 0, NotSerialized)
         {
-            Sleep (100) 
+            Sleep (100)
             Local0 = \_SB.PCI0.GP17.RPRM ((\_SB.PCI0.GP17.DADR + 0x54), 0x02)
             \_SB.PCI0.GP17.WPRM ((\_SB.PCI0.GP17.DADR + 0x54), 0x02, (Local0 & 0x7FFC))
             Local1 = \_SB.PCI0.GP17.VGA.RPRM ((\_SB.PCI0.GP17.VGA.DADR + 0x54), 0x02)

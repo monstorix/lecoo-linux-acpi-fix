@@ -11,6 +11,42 @@ This patch addresses the following issues:
 - Fixes the "instant wake" issue for the S4 state (hibernation).
 - Significantly improves the stability of the **s2idle** sleep state (Modern Standby) and fixes random "instant wake" issues by blocking spurious events.
 
+> ### ⚠️ BIOS 2.5+ (`0x01072009`): rebuild locally — the S5 remnant stays either way
+>
+> On the author's unit, stock 2.5 firmware already handles most of the issues above:
+>
+> | Issue | State on stock 2.5 (measured, author's unit) |
+> |---|---|
+> | Shutdown → reboot | ~18 % of shutdowns (3/17) — firmware-level remnant |
+> | S3 unlock | `mem_sleep` already offers `[s2idle] deep` |
+> | WMI buffer overflow | no `AE_AML_BUFFER_LIMIT` / WMI errors logged |
+> | `ACPI ... device not found` | 0 occurrences |
+> | S4 instant wake | hibernation is not used (zram swap only) |
+> | s2idle instant wake | 2 min 20 s suspend, no spurious wake-up |
+>
+> The earlier blanket "do not load any override" recommendation was **partially
+> revised on 2026-10-27** after independent validation
+> ([issue #6](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/6)): a
+> second N155A on 2.5 rebuilt the patch from its **own dump** — all 4 tables
+> applied, fTPM fine, s2idle fully fixed — while the intermittent
+> shutdown→reboot remained (~50 % with the patch; the stock baseline on that
+> unit is unknown). The previously claimed 18 % → 44 % jump caused by the
+> override itself was never statistically established (3/17 vs 11/25,
+> single-table runs n = 1) and is now in doubt.
+>
+> Practical guidance for 2.5:
+> - never reuse a cpio built on another machine — rebuild with
+>   `rebuild_patch.sh` from your own dump (foreign DRAM addresses break fTPM,
+>   see issue #3);
+> - if s2idle (or Wi-Fi power sequencing) misbehaves on your unit, the rebuilt
+>   patch is a reasonable fix;
+> - the intermittent shutdown→reboot (~20–50 %) must be expected with or
+>   without the override — it is firmware-level, and no single patch edit has
+>   been shown to influence it.
+>
+> Per-symptom reference (what to check, what to fix first) is in
+> [`patches/bios-0x01072009/SYMPTOMS.md`](patches/bios-0x01072009/SYMPTOMS.md).
+
 
 ### ⚠️ Important
 
@@ -20,12 +56,36 @@ The `acpi_override` file must be loaded **BEFORE** the main initramfs image.
 
 - **Secure Boot:** This patch will not work out-of-the-box if Secure Boot **is enabled**. Depending on the bootloader used, loading custom ACPI tables under Secure Boot may require complex manual signing and enrollment of your own keys or files modification in critical partitions. It is highly recommended that you disable Secure Boot to use this patch to avoid system down by misconfiguration. You will need to resolve any issues or errors that arise during the configuration process yourself.
 
-- **TPM 2.0:** This patch may prevent fTPM from being detected by the Linux kernel's built-in drivers (Device `/dev/tpm0` or `/dev/tpmrm0` will report a timeout in dmesg). This will result in a 90-second delay to boot time. For now, the only solution is to disable the TPM in the BIOS. If you are already using TPM-related features such as the automatic unlocking of LUKS partitions, it is not recommended that you use this patch. However, PRs are welcomed if you have found another solution. (See [the issue #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3) for the reference)
+- **TPM 2.0:** ~~This patch may prevent fTPM from being detected by the Linux kernel's built-in drivers~~ **Fixed.** The previous limitation was caused by the override DSDT being a static snapshot: the firmware normally patches the TPM device's enablement variables (`TPMF`, `TTDP`, `TPMB`, `FTPM`, `PPIM`, ...) into the DSDT at every boot, and these values were lost when the kernel loaded the static override (see [issue #3](https://github.com/LaVashikk/lecoo-linux-acpi-fix/issues/3)). The tables are now rebuilt from a live DSDT dump taken with fTPM enabled (BIOS 2.5), so the runtime-patched values are baked in and `/dev/tpm0`/`/dev/tpmrm0` work without the 90-second boot delay.
+
+- **Memory layout sensitivity:** The rebuilt tables hardcode several DRAM-resident ACPI NVS addresses (`PPIM`, `OGNV`, `GNVS`, `NRSB`) captured at dump time. They are stable across normal boots, but may shift if you change memory-related BIOS settings (e.g. UMA frame buffer size), replace/retrain RAM, or after a BIOS update. If TPM or WMI misbehaves after such a change, re-dump your DSDT and rebuild the patch (see `build_acpi.sh`).
 
 ## Preparation
 
 1. Download the **`acpi_override.cpio`** file from the [Releases](https://github.com/LaVashikk/lecoo-linux-acpi-fix/releases) section.
 2. Copy it to the root of your boot partition (usually `/boot`).
+
+### Rebuilding the patch on your own machine (recommended for BIOS 2.5+)
+
+The patch tables embed DRAM-resident ACPI NVS addresses that are firmware-build
+specific. If your machine runs the same BIOS revision (DSDT OEM revision
+`0x01072009`, i.e. BIOS 2.5), you can rebuild everything from a live dump with:
+
+```bash
+sudo ./rebuild_patch.sh        # dump + patch + compile + pack acpi_override.cpio
+```
+
+The script verifies the BIOS revision, that fTPM is enabled, that the patch is
+not loaded in the current boot, applies the structural fixes in an
+address-agnostic way (see `patches/bios-0x01072009/*.changes.diff` for a human
+review of every change), compiles the tables and packs `acpi_override.cpio`.
+To rebuild from an existing dump without root: `ACPI_DUMP_FILE=acpi.out ./rebuild_patch.sh`.
+
+The patch targets the **2.x firmware behaviour**: every deliberate deviation
+from the 2.x defaults is documented with its rationale, revert procedure and a
+verification matrix in [`patches/bios-0x01072009/CHANGES.md`](patches/bios-0x01072009/CHANGES.md).
+The 1.x dump in `origin/` is treated as a snapshot only — it is never used as a
+behavioural baseline for 2.x.
 
 ```bash
 sudo cp acpi_override.cpio /boot/

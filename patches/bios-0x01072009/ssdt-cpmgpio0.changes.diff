@@ -1,0 +1,90 @@
+--- /tmp/wk/c.dsl	2026-10-24 19:47:39.977294386 +0800
++++ patched/ssdt-cpmgpio0.dsl	2026-10-24 19:47:03.941005347 +0800
+@@ -5,7 +5,7 @@
+  * 
+  * Disassembling to symbolic ASL+ operators
+  *
+- * Disassembly of c.dat
++ * Disassembly of ssdt-cpmgpio0.dat
+  *
+  * Original Table Header:
+  *     Signature        "SSDT"
+@@ -18,7 +18,7 @@
+  *     Compiler ID      "INTL"
+  *     Compiler Version 0x20220331 (539099953)
+  */
+-DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000001)
++DefinitionBlock ("", "SSDT", 2, "AMD", "CPMGPIO0", 0x00000002)
+ {
+     /*
+      * iASL Warning: There were 3 external control methods found during
+@@ -65,6 +65,7 @@
+     External (_SB_.PCI0.SBRG.H_EC.BAT0, UnknownObj)
+     External (_SB_.PCI0.SBRG.H_EC.OKEC, IntObj)
+     External (_SB_.PWRB, DeviceObj)
++    External (\SLPF, IntObj)
+     External (CMSR, IntObj)
+     External (CMSW, MethodObj)    // Warning: Unknown method, guessing 3 arguments
+     External (M000, MethodObj)    // 1 Arguments
+@@ -214,13 +215,13 @@
+         {
+             Name (BUF0, ResourceTemplate ()
+             {
+-                GpioInt (Level, ActiveHigh, ExclusiveAndWake, PullNone, 0x0000,
++                GpioInt (Level, ActiveHigh, Exclusive, PullNone, 0x0000,
+                     "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                     )
+                     {   // Pin list
+                         0x003D
+                     }
+-                GpioInt (Level, ActiveHigh, ExclusiveAndWake, PullNone, 0x0000,
++                GpioInt (Level, ActiveHigh, Exclusive, PullNone, 0x0000,
+                     "\\_SB.GPIO", 0x00, ResourceConsumer, ,
+                     )
+                     {   // Pin list
+@@ -289,6 +290,7 @@
+ 
+         Method (_EVT, 1, Serialized)  // _EVT: Event
+         {
++            Debug = "DBG_S2I: just working, fine!"
+             M460 ("  OEM-ASL-\\_SB.GPIO._EVT-Start Case %d\n", ToInteger (Arg0), Zero, Zero, Zero, Zero, Zero)
+             Switch (ToInteger (Arg0))
+             {
+@@ -297,9 +299,8 @@
+                     M000 (0x3900)
+                     If (\_SB.PCI0.SBRG.H_EC.B1PN)
+                     {
+-                        0x56 = CMSR /* External reference */
+-                        Local1
+-                        Local1 += 0x04
++                        Store (CMSR, Local1)
++                        Add (Local1, 0x04, Local1)
+                         CMSW (0x56, Local1, M460 ("    Notify (\\_SB.PCI0.SBRG.H_EC.BAT0)\n", Zero, Zero, Zero, Zero, Zero, Zero))
+                         \_SB.PCI0.SBRG.H_EC.B1PN = Zero
+                         Notify (\_SB.PCI0.SBRG.H_EC.BAT0, 0x80) // Status Change
+@@ -307,11 +308,20 @@
+                     }
+                     Else
+                     {
+-                        0x56 = CMSR /* External reference */
+-                        Local1
+-                        Local1 += 0x02
+-                        CMSW (0x56, Local1, M460 ("    Notify (\\_SB.PWRB, 0x80)\n", Zero, Zero, Zero, Zero, Zero, Zero))
+-                        Notify (\_SB.PWRB, 0x80) // Status Change
++
++                        If (LEqual (\SLPF, Zero))
++                        {
++                            Debug = "*** DBG_S2I: not in sleep state, so do some job, whatever ***"
++                            Store (CMSR, Local1)
++                            Add (Local1, 0x02, Local1)
++                            CMSW (0x56, Local1, M460 ("    Notify (\\_SB.PWRB, 0x80)\n", Zero, Zero, Zero, Zero, Zero, Zero))
++                            Notify (\_SB.PWRB, 0x80) // Status Change
++                        }
++                        Else
++                        {
++                            // we are sleeping!
++                            Debug = "*** DBG_S2I: BLOCKED FAKE PWRB DURING SLEEP! ***"
++                        }
+                     }
+                 }
+                 Case (0x02)

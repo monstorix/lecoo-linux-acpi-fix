@@ -1,0 +1,18 @@
+[Unit]
+Description=Lecoo 2.5: unbind r8169 before poweroff (stops the S5 -> reboot)
+Documentation=file:///usr/local/sbin/lecoo-nic-unbind.sh
+# 只在关机链路里干活：启动时 ExecStart 是空操作，停止本单元时才解绑。
+DefaultDependencies=no
+Before=shutdown.target
+# 关机的最后一步才停它；比文件系统卸载更早，写 sysfs 仍然可用。
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/local/sbin/lecoo-nic-unbind.sh apply
+# 解绑是同步的，正常 <100 ms；给个上限避免极端情况下卡住关机。
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
